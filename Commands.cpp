@@ -2,9 +2,9 @@
 #include <string.h>
 #include <iostream>
 #include <sstream>
-#include <sys/wait.h>
 #include <iomanip>
 #include "Commands.h"
+#include <limits>
 
 using namespace std;
 
@@ -51,7 +51,7 @@ int _parseCommandLine(const char* cmd_line, char** args) {
     args[i] = (char*)malloc(s.length()+1);
     memset(args[i], 0, s.length()+1);
     strcpy(args[i], s.c_str());
-    args[++i] = NULL;
+    args[++i] = nullptr;
   }
   return i;
 
@@ -81,37 +81,115 @@ void _removeBackgroundSign(char* cmd_line) {
   cmd_line[str.find_last_not_of(WHITESPACE, idx) + 1] = 0;
 }
 
+bool checkAndRemoveAmpersand(string& str) {
+    // find last character other than spaces
+    unsigned int idx = str.find_last_not_of(WHITESPACE);
+
+    // if all characters are spaces then return
+    if (idx == string::npos) {
+        return false;
+    }
+
+    // if the command line does not end with & then return
+    if (str[idx] != '&') {
+        return false;
+    }
+
+    // erase
+    str.erase(idx);
+}
+
 //---------------------------JOBS LISTS------------------------------
-void JobsList::addJob(pid_t pid, const string& cmd_str, bool isStopped) {
+JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped) :  pid(pid),
+                                                                         cmd_str(cmd_str),
+                                                                         is_stopped(is_stopped) {
+    start_time = time(nullptr);
+    if (start_time == (time_t)(-1)) perror("smash error: time failed");
+
+}
+void JobsList::addJob(pid_t pid, const string& cmd_str, bool is_stopped) {
+    // remove zombies from jobs list
     removeFinishedJobs();
-    if ()
-    // insert into map with jobID = max jobid + 1
+
+    // create new job entry
+    JobEntry new_job(pid, cmd_str, is_stopped);
+    JobID new_id = 1;
+    if (!jobs.empty()) new_id = jobs.rbegin()->first + 1;
+
+    // insert to map
+    jobs[new_id] = new_job;
 }
 void JobsList::printJobsList() {
-    // call removeFinishedJobs
-    // iterate the map
-    // print each job by the format
+    // remove zombies from jobs list
+    removeFinishedJobs();
+
+    // iterate the map and print each job by the format
+    for (const auto& job : jobs) {
+        auto curr_time = time(nullptr);
+        if (curr_time == (time_t)(-1)) perror("smash error: time failed");
+
+        cout << "[" << job.first << "]";
+        cout << " " << job.second.cmd_str;
+        cout << " : " << job.second.pid;
+        cout << " " << difftime(job.second.start_time, curr_time);
+        if (job.second.is_stopped) cout << " (stopped)";
+        cout << endl;
+    }
 }
 void JobsList::killAllJobs() {
+    cout << "smash: sending SIGKILL signal to " << jobs.size() << " jobs:" << endl;
+
     // interate on map, print message and send SIGKILL
+    for (const auto& job : jobs) {
+        cout << job.second.pid << " " << job.second.cmd_str;
+        if (kill(job.second.pid, SIGKILL) < 0) perror("smash error: kill failed");
+    }
 }
 void JobsList::removeFinishedJobs() {
+    vector<JobID> to_remove(100,0);
+    int to_remove_iter= 0;
+
     // iterate on map, and waitpid with each pid WNOHANG flag
-    // check return waitpid, if job was "waited" then remove from map
+    for (const auto& job : jobs) {
+        pid_t waited = waitpid(job.second.pid, nullptr, WNOHANG);
+        if (waited < 0) perror("smash error: waitpid failed");
+        if (waited > 0) to_remove[to_remove_iter++] = waited;
+    }
+
+    // remove from map all waited jobs
+    for (int i = 0; i < to_remove_iter; i++) {
+        jobs.erase(to_remove[i]);
+    }
 }
 JobEntry* JobsList::getJobById(JobID jobId) {
+    if (jobs.count(jobId) == 0) return nullptr;
     // return from map
+    return &jobs[jobId];
 }
 void JobsList::removeJobById(JobID jobId) {
-    // remove from map
+    if (jobs.count(jobId) > 0) {
+        jobs.erase(jobId);
+    }
 }
 JobEntry* JobsList::getLastJob(JobID* lastJobId) {
+    if (jobs.empty()) return nullptr;
+
     // return last in map
+    auto last_job = jobs.rbegin();
+    if (lastJobId) *lastJobId = last_job->first;
+    return &(last_job->second);
 }
 JobEntry* JobsList::getLastStoppedJob(JobID* jobId) {
     // iterate and find last stopped job return it
-}
+    for (auto iter = jobs.rbegin(); iter != jobs.rend(); iter++) {
+        if (iter->second.is_stopped) {
+            if (jobId) *jobId = iter->first;
+            return &(iter->second);
+        }
+    }
 
+    return nullptr;
+}
 //-------------------------SPECIAL COMMANDS-------------------------
 PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_line) {
     // save cmd and shell
@@ -138,40 +216,83 @@ void PipeCommand::execute() {
         // CURR_ FORK.. =0
 }
 
-RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_line) {
-    // save cmd and shell
+RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
+                                                                                    shell(shell),
+                                                                                    to_append(false) {
+    // find split place
+    int split_place = 0;
+    while (cmd_line[split_place] && cmd_line[split_place] != '>') split_place++;
+    if (cmd_line[split_place+1] == '>') to_append = true;
+
+    // save command part
+    cmd_part = string(cmd_line, split_place);
+
+    // and file address part
+    if (to_append) split_place++;
+    pathname = cmd_line[split_place+1];
 }
 void RedirectionCommand::execute() {
-    // fork
-        // child:
-        // stpgrp
-        // close stdout
-        // open in place 2 new file
-        // if >> you need append, if > overwrite
-        // shell.execute with the & if there is one
+    // open file, if to_append == true open in append mode
+    int flags = O_CREAT;
+    if (to_append) flags |= O_APPEND;
+    mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+    int file_fd = open(pathname.c_str(), flags, mode);
+    if (file_fd < 0) perror("smash error: open failed");
 
-        // parent:
-        // else CURR_FORK =..., waitpid
-        // CURR_ FORK.. =0
+    // move stdout to other file descriptor
+    int stdout_fd = dup(1);
+    if (stdout_fd < 0) perror("smash error: dup failed");
+
+    // put file descriptor in 1st place
+    if (dup2(file_fd, 1) < 0) perror("smash error: dup2 failed");
+
+    // shell.execute the command
+    shell->executeCommand(cmd_part.c_str());
+
+    // restore stdout and close all new file descriptors
+    if (dup2(stdout_fd, 1) < 0) perror("smash error: dup2 failed");;
+    if (close(stdout_fd) < 0) perror("smash error: close failed");
+    if (close(file_fd) < 0) perror("smash error: close failed");
 }
 
 //---------------------------EXTERNAL CLASSES------------------------------
-ExternalCommand::ExternalCommand(const char* cmd_line, JobsList* jobs) : Command(cmd_line) {
-   // save jobs, and cmd
+ExternalCommand::ExternalCommand(const char* cmd_line, JobsList* jobs) :    Command(cmd_line),
+                                                                            jobs(jobs),
+                                                                            to_background(false),
+                                                                            cmd_to_son(cmd_line) {
+    if (checkAndRemoveAmpersand(cmd_to_son)) to_background = true;
 }
-
 void ExternalCommand::execute() {
-    // fork to child
-    //child:
-    // remove &
-    // call setpgrp() syscall - make sure that the child get different GROUP ID
-    // execv to shell with cmd without &
+    pid_t pid = fork();
 
-    //parent:
-    // if with "&" add job to JOBS LIST and return
-    // else, // else CURR_FORK =..., waitpid with UNTRACED
-    //        // CURR_ FORK.. =0
-    // if son still running (STOPPED and not zombie) add to jobs list
+    if (pid == 0) { //child:
+        setpgrp(); // no possible errors
+
+        // exec to bash with cmd_line
+        if (execl("/bin/bash", "/bin/bash", cmd_to_son.c_str(), (char*) nullptr) < 0) {
+            perror("smash error: execl failed");
+        }
+    }
+    else if (pid > 0) { //parent
+        // if with "&" add to JOBS LIST and return
+        if (to_background) {
+            jobs->addJob(pid, cmd_line);
+        } else {
+            // wait for job
+            // add to jobs list if stopped
+            CURR_FORK_CHILD_RUNNING = pid;
+            int status;
+            if (waitpid(pid, &status, WUNTRACED) < 0) {
+                perror("smash error: waitpid failed");
+            } else {
+                if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_line);
+            }
+            CURR_FORK_CHILD_RUNNING = 0;
+        }
+    }
+    else { // fork failed
+        perror("smash error: fork failed");
+    }
 }
 
 //---------------------------BUILT IN CLASSES------------------------------
@@ -217,61 +338,232 @@ void JobsCommand::execute() {
     // jobs.print...
 }
 
-KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
-    // parse: type of signal and jobID
-        // if syntax not valid print error
-    // if job id not exist print error message
-    // get pid from jobs list
-    // if sig_num not valid print error message
+KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line), signum(0), pid(0) {
+    // parse: type of signal and jobID, if syntax not valid print error
+    int job_id;
+    if (!parseAndCheck(cmd_line, &signum, &job_id)) {
+        printArgumentsError();
+        return;
+    }
 
-    // if something not valid save pid = 0
+    // if job id not exist print error message
+    auto job_entry = jobs->getJobById(job_id);
+    if (!job_entry) {
+        printJobError(job_id);
+        return;
+    }
+
+    // all OK
+    pid = job_entry->pid;
 }
 void KillCommand::execute() {
-    // if pid = 0 return
-    // send signal with syscall kill()
-    // print message
-    // if syscall fails use perror to print error
+    if (pid == 0 || signum == 0) return;
+
+    // send signal, print message
+    if (kill(pid, signum) < 0)perror("smash error: kill failed");
+    printSignalSent(signum, pid);
+}
+bool KillCommand::parseAndCheck(const char* cmd_line, int* signum, JobID* job_id) {
+    string first_arg, second_arg;
+
+    // parse
+    char* args[21];
+    int num_of_args = _parseCommandLine(cmd_line, args);
+    if (num_of_args == 3) {
+        first_arg = args[1];
+        second_arg = args[2];
+    }
+    for (int i = 0; i < num_of_args; i++) free(args[i]);
+    if (num_of_args != 3) return false;
+
+    // check first argument
+    if ((int)first_arg.size() < 2) return false;
+    if ((int)first_arg.size() > 3) return false;
+    if (first_arg[0] != '-') return false;
+    if (!isdigit(first_arg[1])) return false;
+    if ((int)first_arg.size() == 2 && !isdigit(first_arg[2])) return false;
+    int sig = stoi(first_arg.substr(1));
+    if (sig < 1 || sig > 31) return false;
+
+    // check second argument
+    if ((int)second_arg.size() > 10) return false;
+    for (auto letter : second_arg) if (!isdigit(letter)) return false;
+    long job = stol(second_arg);
+    if (job > numeric_limits<int>::max() || job < 1) return false;
+
+    // all OK
+    *signum = (int)sig;
+    *job_id = (int)job;
+    return true;
+}
+void KillCommand::printArgumentsError() {
+    cout << "smash error: kill: invalid arguments" << endl;
+}
+void KillCommand::printJobError(JobID job_id) {
+    cout << "smash error: kill: job-id " << job_id << " does not exist" << endl;
+}
+void KillCommand::printSignalSent(int signum, pid_t pid) {
+    cout << "signal number " << signum << " was sent to pid " << pid << endl;
 }
 
-ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
+ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
+                                                                                job_id(0),
+                                                                                jobs(jobs) {
     // if num of argument not valid or syntax problem print error
-    // save job_id, jobs list
-    // if job_id not exist in job list print error message
-    // if job id not valid print error
-    // if no job_id, job_id = -1
+    if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
+        printArgumentsError();
+        return;
+    }
+
+    auto job_entry = jobs->getJobById(job_id);
+    if (!job_entry) {
+        printJobError(job_id);
+        job_id = -1;
+        return;
+    }
 }
 void ForegroundCommand::execute() {
-    // if job_id == -1 than get the last job
-        // if jobs list empty print error
+    if (job_id < 0) return;
+
+    JobEntry* job;
+    // if job_id == 0 than get the last job
+    // if jobs list empty print error
+    if (job_id == 0) {
+        job = jobs->getLastJob(&job_id);
+        if (!job) {
+            printNoJobsError();
+            return;
+        }
+    } else {
+        job = jobs->getJobById(job_id);
+    }
+    int pid = job->pid;
+    string cmd_str = job->cmd_str;
+
     // remove from jobs list
+    jobs->removeJobById(job_id);
+
     // print job's command line
+    cout << cmd_str << " : " << pid << endl;
+
     // send SIGCONT to job's pid
-    // CURR_FORK =..., waitpid
-    // CURR_ FORK.. =0
+    if (kill(pid, SIGCONT) < 0) perror("smash error: kill failed");
+
+    // wait for job
+    // add to jobs list if stopped
+    CURR_FORK_CHILD_RUNNING = pid;
+    int status;
+    if (waitpid(pid, &status, WUNTRACED) < 0) {
+        perror("smash error: waitpid failed");
+    } else {
+        if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_line);
+    }
+    CURR_FORK_CHILD_RUNNING = 0;
+}
+void ForegroundCommand::printArgumentsError() {
+    cout << "smash error: fg: invalid arguments" << endl;
+}
+void ForegroundCommand::printJobError(JobID job_id) {
+    cout << "smash error: fg: job-id " << job_id << " does not exist" << endl;
+}
+void ForegroundCommand::printNoJobsError() {
+    cout << "smash error: fg: jobs list is empty" << endl;
 }
 
-BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
-    // if no job id, job id = -1
-    // if job not stopped error
-    // if job not exist error
-    // syntax problem - error
+BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
+                                                                             job_id(0),
+                                                                             jobs(jobs) {
+    // if num of argument not valid or syntax problem print error
+    if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
+        printArgumentsError();
+        return;
+    }
+
+    auto job_entry = jobs->getJobById(job_id);
+    if (!job_entry) {
+        printJobError(job_id);
+        job_id = -1;
+        return;
+    }
+    if (!job_entry->is_stopped) {
+        printNotStoppedError(job_id);
+        job_id = -1;
+        return;
+    }
 }
 void BackgroundCommand::execute() {
-    // if job_id = -1 , get last stop job
-        // if no stopped jobs, print error
-    // print cmd line of job
-    // change to NOT STOPPED in jobs list
+    if (job_id < 0) return;
+
+    JobEntry* job = nullptr;
+    // if job_id == 0 than get the last job
+    // if jobs list empty print error
+    if (job_id == 0) {
+        job = jobs->getLastStoppedJob(&job_id);
+        if (!job) {
+            printNoJobsError();
+            return;
+        }
+    } else {
+        job = jobs->getJobById(job_id);
+    }
+
+    // print job's command line
+    cout << job->cmd_str << " : " << job->pid << endl;
+
     // send SIGCONT to job's pid
-    // no waitpid
+    // update is_stopped
+    job->is_stopped = false;
+    if (kill(job->pid, SIGCONT) < 0) perror("smash error: kill failed");
+}
+void BackgroundCommand::printArgumentsError() {
+    cout << "smash error: b g: invalid arguments" << endl;
+}
+void BackgroundCommand::printJobError(JobID job_id) {
+    cout << "smash error: bg: job-id " << job_id << " does not exist" << endl;
+}
+void BackgroundCommand::printNoJobsError() {
+    cout << "smash error: bg: there is no stopped jobs to resume" << endl;
+}
+void BackgroundCommand::printNotStoppedError(JobID job_id) {
+    cout << "smash error: bg: job-id " << job_id << " is already running in the background" << endl;
 }
 
-QuitCommand::QuitCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
-    // set kill_all if "kill" and jobs list
+bool parseAndCheckFgBgCommands(const char* cmd_line, JobID* job_id) {
+    string arg;
 
+    // parse
+    char* args[21];
+    int num_of_args = _parseCommandLine(cmd_line, args);
+    if (num_of_args == 2) arg = args[1];
+    for (int i = 0; i < num_of_args; i++) free(args[i]);
+
+    if (num_of_args > 2) return false;
+    if (num_of_args == 1) return true;
+
+    for (auto letter : arg) if (!isdigit(letter)) return false;
+    long job = stol(arg);
+    if (job > numeric_limits<int>::max() || job < 1) return false;
+
+    // all OK
+    *job_id = (int)job;
+    return true;
+}
+
+QuitCommand::QuitCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
+                                                                    kill_all(false),
+                                                                    jobs(jobs) {
+    // parse
+    char* args[21];
+    int num_of_args = _parseCommandLine(cmd_line, args);
+    if (num_of_args > 1) {
+        string arg = args[1];
+        if (arg == "kill") kill_all = true;
+    }
+    for (int i = 0; i < num_of_args; i++) free(args[i]);
 }
 void QuitCommand::execute() {
-    // if (kill_all) ...
-    // exit(0);
+    if (kill_all) jobs->killAllJobs();
+    exit(0);
 }
 
 CopyCommand::CopyCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {

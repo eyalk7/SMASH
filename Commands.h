@@ -5,7 +5,13 @@
 #include <string>
 #include <time.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <map>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 using std::vector;
 using std::string;
@@ -20,9 +26,10 @@ pid_t CURR_FORK_CHILD_RUNNING;
 class SmallShell;
 
 class Command {
-  string cmd_line;
+protected:
+    string cmd_line;
  public:
-  Command(const char* cmd_line);
+    explicit Command(const char* cmd_line);
   virtual ~Command();
   virtual void execute() = 0;
   //virtual void prepare();
@@ -55,6 +62,7 @@ class HistoryCommand : public BuiltInCommand {
 
 //---------------------------JOBS LISTS------------------------------
 struct JobEntry {
+    JobEntry(pid_t pid, const string& cmd_str, bool is_stopped);
     pid_t pid;
     string cmd_str;
     bool is_stopped;
@@ -63,18 +71,20 @@ struct JobEntry {
 typedef int JobID;
 
 class JobsList {
+public:
+    JobsList() = default;
+    ~JobsList();
+    void addJob(pid_t pid, const string& cmd_str, bool is_stopped = false);
+    void printJobsList();
+    void killAllJobs();
+    void removeFinishedJobs();
+    JobEntry* getJobById(JobID jobId);
+    void removeJobById(JobID jobId);
+    JobEntry* getLastJob(JobID* lastJobId);
+    JobEntry*getLastStoppedJob(JobID* jobId);
+
+private:
   map<JobID,JobEntry> jobs;
- public:
-  JobsList() = default;
-  ~JobsList();
-  void addJob(pid_t pid, const string& cmd_str, bool isStopped = false);
-  void printJobsList();
-  void killAllJobs();
-  void removeFinishedJobs();
-  JobEntry* getJobById(JobID jobId);
-  void removeJobById(JobID jobId);
-  JobEntry* getLastJob(JobID* lastJobId);
-  JobEntry*getLastStoppedJob(JobID* jobId);
 };
 
 //-------------------------SPECIAL COMMANDS-------------------------
@@ -83,15 +93,18 @@ class PipeCommand : public Command {
     SmallShell* shell;
 public:
     PipeCommand(const char* cmd_line, SmallShell* shell);
-    virtual ~PipeCommand() {}
+    virtual ~PipeCommand() = default;
     void execute() override;
 };
 
 class RedirectionCommand : public Command {
     SmallShell* shell;
+    string cmd_part;
+    string pathname;
+    bool to_append;
 public:
     RedirectionCommand(const char* cmd_line, SmallShell* shell);
-    virtual ~RedirectionCommand() {}
+    virtual ~RedirectionCommand() = default;
     void execute() override;
     //void prepare() override;
     //void cleanup() override;
@@ -101,9 +114,11 @@ public:
 
 class ExternalCommand : public Command {
     JobsList* jobs;
+    bool to_background;
+    string cmd_to_son;
 public:
     ExternalCommand(const char* cmd_line, JobsList* jobs);
-    virtual ~ExternalCommand() {}
+    virtual ~ExternalCommand() = default;
     void execute() override;
 };
 
@@ -113,8 +128,8 @@ public:
 
 class BuiltInCommand : public Command {
 public:
-    BuiltInCommand(const char* cmd_line);
-    virtual ~BuiltInCommand() {}
+    explicit BuiltInCommand(const char* cmd_line);
+    virtual ~BuiltInCommand() = default;
 };
 
 class ChangePromptCommand : public BuiltInCommand {
@@ -122,22 +137,22 @@ class ChangePromptCommand : public BuiltInCommand {
     SmallShell* shell;
 public:
     ChangePromptCommand(const char* cmd_line, SmallShell* shell);
-    virtual ~ChangePromptCommand() {}
+    virtual ~ChangePromptCommand() = default;
     void execute() override;
 };
 
 
 class ShowPidCommand : public BuiltInCommand {
 public:
-    ShowPidCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {};
-    virtual ~ShowPidCommand() {}
+    explicit ShowPidCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {};
+    virtual ~ShowPidCommand() = default;
     void execute() override;
 };
 
 class GetCurrDirCommand : public BuiltInCommand {
 public:
-    GetCurrDirCommand(const char* cmd_line);
-    virtual ~GetCurrDirCommand() {}
+    explicit GetCurrDirCommand(const char* cmd_line);
+    virtual ~GetCurrDirCommand() = default;
     void execute() override;
 };
 
@@ -146,7 +161,7 @@ class ChangeDirCommand : public BuiltInCommand {
     string* last_dir;
 public:
     ChangeDirCommand(const char* cmd_line, string* last_dir);
-    virtual ~ChangeDirCommand() {}
+    virtual ~ChangeDirCommand() = default;
     void execute() override;
 };
 
@@ -154,50 +169,65 @@ class JobsCommand : public BuiltInCommand {
     JobsList* jobs;
 public:
     JobsCommand(const char* cmd_line, JobsList* jobs);
-    virtual ~JobsCommand() {}
+    virtual ~JobsCommand() = default;
     void execute() override;
 };
 
 class KillCommand : public BuiltInCommand {
-    int sig_num, pid;
+    int signum, pid;
+    bool parseAndCheck(const char* cmd_line, int* signum, JobID* job_id);
+    void printArgumentsError();
+    void printJobError(JobID job_id);
+    void printSignalSent(int signum, pid_t pid);
+
 public:
     KillCommand(const char* cmd_line, JobsList* jobs);
-    virtual ~KillCommand() {}
+    virtual ~KillCommand() = default;
     void execute() override;
 };
 
 class ForegroundCommand : public BuiltInCommand {
     int job_id;
     JobsList* jobs;
+    void printArgumentsError();
+    void printJobError(JobID job_id);
+    void printNoJobsError();
 public:
     ForegroundCommand(const char* cmd_line, JobsList* jobs);
-    virtual ~ForegroundCommand() {}
+    virtual ~ForegroundCommand() = default;
     void execute() override;
 };
 
 class BackgroundCommand : public BuiltInCommand {
     int job_id;
     JobsList* jobs;
+    void printArgumentsError();
+    void printJobError(JobID job_id);
+    void printNoJobsError();
+    void printNotStoppedError(JobID job_id);
 public:
     BackgroundCommand(const char* cmd_line, JobsList* jobs);
-    virtual ~BackgroundCommand() {}
+    virtual ~BackgroundCommand() = default;
     void execute() override;
 };
+
+// parsing function for background and foreground commands
+bool parseAndCheckFgBgCommands(const char* cmd_line, JobID* job_id);
 
 class QuitCommand : public BuiltInCommand {
     bool kill_all;
     JobsList* jobs;
 public:
     QuitCommand(const char* cmd_line, JobsList* jobs);
-    virtual ~QuitCommand() {}
+    virtual ~QuitCommand() = default;
     void execute() override;
 };
 
 // TODO: should it really inhirit from BuiltInCommand ?
 class CopyCommand : public BuiltInCommand {
 public:
-    CopyCommand(const char* cmd_line);
-    virtual ~CopyCommand() {}
+    explicit CopyCommand(const char* cmd_line);
+    virtual ~CopyCommand() = default;
     void execute() override;
 };
 //---------------------------END OF BUILT IN--------------------------------
