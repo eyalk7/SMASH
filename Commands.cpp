@@ -82,10 +82,9 @@ void _removeBackgroundSign(char* cmd_line) {
 }
 
 //---------------------------JOBS LISTS------------------------------
-
-void JobsList::addJob(Command* cmd, bool is_stopped) {
-    // call removeFinishedJobs
-    // if empty, jobID = 1
+void JobsList::addJob(pid_t pid, const string& cmd_str, bool isStopped) {
+    removeFinishedJobs();
+    if ()
     // insert into map with jobID = max jobid + 1
 }
 void JobsList::printJobsList() {

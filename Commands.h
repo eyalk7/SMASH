@@ -57,8 +57,8 @@ class HistoryCommand : public BuiltInCommand {
 struct JobEntry {
     pid_t pid;
     string cmd_str;
-    time_t start_time;
     bool is_stopped;
+    time_t start_time;
 };
 typedef int JobID;
 
@@ -67,7 +67,7 @@ class JobsList {
  public:
   JobsList() = default;
   ~JobsList();
-  void addJob(Command* cmd, bool isStopped = false);
+  void addJob(pid_t pid, const string& cmd_str, bool isStopped = false);
   void printJobsList();
   void killAllJobs();
   void removeFinishedJobs();
