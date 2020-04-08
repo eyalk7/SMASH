@@ -7,6 +7,10 @@
 #include <unistd.h>
 #include <map>
 
+using std::vector;
+using std::string;
+using std::map;
+
 #define COMMAND_ARGS_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
 #define HISTORY_MAX_RECORDS (50)
@@ -16,7 +20,7 @@ pid_t CURR_FORK_CHILD_RUNNING;
 class SmallShell;
 
 class Command {
-// TODO: Add your data members
+  string cmd_line;
  public:
   Command(const char* cmd_line);
   virtual ~Command();
@@ -25,8 +29,6 @@ class Command {
   //virtual void cleanup();
   // TODO: Add your extra methods if needed
 };
-
-
 
 /*
 class CommandsHistory {
@@ -78,7 +80,6 @@ class JobsList {
 //-------------------------SPECIAL COMMANDS-------------------------
 
 class PipeCommand : public Command {
-    string cmd_line;
     SmallShell* shell;
 public:
     PipeCommand(const char* cmd_line, SmallShell* shell);
@@ -87,7 +88,6 @@ public:
 };
 
 class RedirectionCommand : public Command {
-    string cmd_line;
     SmallShell* shell;
 public:
     RedirectionCommand(const char* cmd_line, SmallShell* shell);
@@ -129,7 +129,7 @@ public:
 
 class ShowPidCommand : public BuiltInCommand {
 public:
-    ShowPidCommand(const char* cmd_line) = default;
+    ShowPidCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {};
     virtual ~ShowPidCommand() {}
     void execute() override;
 };
@@ -195,7 +195,6 @@ public:
 
 // TODO: should it really inhirit from BuiltInCommand ?
 class CopyCommand : public BuiltInCommand {
-    string cmd_line;
 public:
     CopyCommand(const char* cmd_line);
     virtual ~CopyCommand() {}
@@ -205,8 +204,6 @@ public:
 
 class SmallShell {
  private:
-  // TODO: Add your data members
-  SmallShell();
   JobsList jobs;
   string prompt;
   string last_dir;

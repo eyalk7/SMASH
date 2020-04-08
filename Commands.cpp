@@ -1,7 +1,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <iostream>
-#include <vector>
 #include <sstream>
 #include <sys/wait.h>
 #include <iomanip>
@@ -115,7 +114,7 @@ JobEntry* JobsList::getLastStoppedJob(JobID* jobId) {
 }
 
 //-------------------------SPECIAL COMMANDS-------------------------
-PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) {
+PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_line) {
     // save cmd and shell
 }
 void PipeCommand::execute() {
@@ -140,7 +139,7 @@ void PipeCommand::execute() {
         // CURR_ FORK.. =0
 }
 
-RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) {
+RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_line) {
     // save cmd and shell
 }
 void RedirectionCommand::execute() {
@@ -158,7 +157,7 @@ void RedirectionCommand::execute() {
 }
 
 //---------------------------EXTERNAL CLASSES------------------------------
-ExternalCommand::ExternalCommand(const char* cmd_line, JobsList* jobs) {
+ExternalCommand::ExternalCommand(const char* cmd_line, JobsList* jobs) : Command(cmd_line) {
    // save jobs, and cmd
 }
 
@@ -177,7 +176,7 @@ void ExternalCommand::execute() {
 }
 
 //---------------------------BUILT IN CLASSES------------------------------
-ChangePromptCommand::ChangePromptCommand(const char* cmd_line, SmallShell* shell) {
+ChangePromptCommand::ChangePromptCommand(const char* cmd_line, SmallShell* shell) : BuiltInCommand(cmd_line) {
     // no argument = change to default prompt
     // get first argument
     // save prompt string
@@ -197,7 +196,7 @@ void GetCurrDirCommand::execute() {
     // syscall getcwd()
 }
 
-ChangeDirCommand(const char* cmd_line, string* last_dir) {
+ChangeDirCommand::ChangeDirCommand(const char* cmd_line, string* last_dir) : BuiltInCommand(cmd_line) {
     // save new_path and last_dir
     // more than one argument == print error "too many argument"
 }
@@ -212,14 +211,14 @@ void ChangeDirCommand::execute() {
     // if syscall fails use perror to print error
 }
 
-JobsCommand::JobsCommand(const char* cmd_line, JobsList* jobs) {
+JobsCommand::JobsCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
     // save jobs list
 }
 void JobsCommand::execute() {
     // jobs.print...
 }
 
-KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) {
+KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
     // parse: type of signal and jobID
         // if syntax not valid print error
     // if job id not exist print error message
@@ -235,7 +234,7 @@ void KillCommand::execute() {
     // if syscall fails use perror to print error
 }
 
-ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) {
+ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
     // if num of argument not valid or syntax problem print error
     // save job_id, jobs list
     // if job_id not exist in job list print error message
@@ -252,7 +251,7 @@ void ForegroundCommand::execute() {
     // CURR_ FORK.. =0
 }
 
-BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) {
+BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
     // if no job id, job id = -1
     // if job not stopped error
     // if job not exist error
@@ -267,7 +266,7 @@ void BackgroundCommand::execute() {
     // no waitpid
 }
 
-QuitCommand::QuitCommand(const char* cmd_line, JobsList* jobs) {
+QuitCommand::QuitCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
     // set kill_all if "kill" and jobs list
 
 }
@@ -276,7 +275,7 @@ void QuitCommand::execute() {
     // exit(0);
 }
 
-CopyCommand::CopyCommand(const char* cmd_line) {
+CopyCommand::CopyCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {
     // save cmd line;
 }
 void CopyCommand::execute() {
@@ -294,7 +293,7 @@ void CopyCommand::execute() {
 }
 //---------------------------END OF BUILT IN--------------------------------
 
-
+//---------------------------SMALL SHELL--------------------------------------
 SmallShell::SmallShell() {
     // prompt = Smash
     // CURR_FORK.. = 0
@@ -329,4 +328,12 @@ void SmallShell::executeCommand(const char *cmd_line) {
   // cmd->execute();
   // Please note that you must fork smash process for some commands (e.g., external commands....)
   // delete class
+}
+
+void SmallShell::changePrompt(string prompt) {
+
+}
+
+string& SmallShell::getPrompt() {
+
 }
