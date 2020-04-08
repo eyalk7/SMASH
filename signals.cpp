@@ -7,13 +7,15 @@ using namespace std;
 
 void ctrlZHandler(int sig_num) {
 	// TODO: Add your implementation
-	// do as told
-    // send SIGSTP to son with kill
-    //
+	// if CURR_FORKK == 0 do nothing
+    // send SIGSTOP to CURR_FORK...
+    // print message
 }
 
 void ctrlCHandler(int sig_num) {
-  // TODO: Add your implementation
+    // if CURR_FORKK == 0 do nothing
+    // send SIGKILL to CURR_FORK...
+    // print message
 
 }
 

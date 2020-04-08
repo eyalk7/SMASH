@@ -2,10 +2,18 @@
 #define SMASH_COMMAND_H_
 
 #include <vector>
+#include <string>
+#include <time.h>
+#include <unistd.h>
+#include <map>
 
 #define COMMAND_ARGS_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
 #define HISTORY_MAX_RECORDS (50)
+
+pid_t CURR_FORK_CHILD_RUNNING;
+
+class SmallShell;
 
 class Command {
 // TODO: Add your data members
@@ -18,38 +26,7 @@ class Command {
   // TODO: Add your extra methods if needed
 };
 
-class BuiltInCommand : public Command {
- public:
-  BuiltInCommand(const char* cmd_line);
-  virtual ~BuiltInCommand() {}
-};
 
-class ExternalCommand : public Command {
- public:
-  ExternalCommand(const char* cmd_line);
-  virtual ~ExternalCommand() {}
-  void execute() override;
-};
-
-class PipeCommand : public Command {
-  // TODO: Add your data members
- public:
-  PipeCommand(const char* cmd_line);
-  virtual ~PipeCommand() {}
-  void execute() override;
-};
-
-class RedirectionCommand : public Command {
- // TODO: Add your data members
- public:
-  explicit RedirectionCommand(const char* cmd_line);
-  virtual ~RedirectionCommand() {}
-  void execute() override;
-  //void prepare() override;
-  //void cleanup() override;
-};
-
-class JobsList;
 
 /*
 class CommandsHistory {
@@ -74,29 +51,72 @@ class HistoryCommand : public BuiltInCommand {
 };
 */
 
+//---------------------------JOBS LISTS------------------------------
+struct JobEntry {
+    pid_t pid;
+    string cmd_str;
+    time_t start_time;
+    bool is_stopped;
+};
+typedef int JobID;
+
 class JobsList {
+  map<JobID,JobEntry> jobs;
  public:
-  class JobEntry {
-   int pid;
-   string cmd_str;
-  };
- // TODO: Add your data members
- public:
-  JobsList();
+  JobsList() = default;
   ~JobsList();
   void addJob(Command* cmd, bool isStopped = false);
   void printJobsList();
   void killAllJobs();
   void removeFinishedJobs();
-  JobEntry * getJobById(int jobId);
-  void removeJobById(int jobId);
-  JobEntry * getLastJob(int* lastJobId);
-  JobEntry *getLastStoppedJob(int *jobId);
-  // TODO: Add extra methods or modify exisitng ones as needed
+  JobEntry* getJobById(JobID jobId);
+  void removeJobById(JobID jobId);
+  JobEntry* getLastJob(JobID* lastJobId);
+  JobEntry*getLastStoppedJob(JobID* jobId);
 };
+
+//-------------------------SPECIAL COMMANDS-------------------------
+
+class PipeCommand : public Command {
+    string cmd_line;
+    SmallShell* shell;
+public:
+    PipeCommand(const char* cmd_line, SmallShell* shell);
+    virtual ~PipeCommand() {}
+    void execute() override;
+};
+
+class RedirectionCommand : public Command {
+    string cmd_line;
+    SmallShell* shell;
+public:
+    RedirectionCommand(const char* cmd_line, SmallShell* shell);
+    virtual ~RedirectionCommand() {}
+    void execute() override;
+    //void prepare() override;
+    //void cleanup() override;
+};
+
+//---------------------------EXTERNAL CLASS------------------------------
+
+class ExternalCommand : public Command {
+    JobsList* jobs;
+public:
+    ExternalCommand(const char* cmd_line, JobsList* jobs);
+    virtual ~ExternalCommand() {}
+    void execute() override;
+};
+
 
 //---------------------------BUILT IN CLASSES------------------------------
 // maybe timeout ?
+
+class BuiltInCommand : public Command {
+public:
+    BuiltInCommand(const char* cmd_line);
+    virtual ~BuiltInCommand() {}
+};
+
 class ChangePromptCommand : public BuiltInCommand {
     string prompt;
     SmallShell* shell;
@@ -175,6 +195,7 @@ public:
 
 // TODO: should it really inhirit from BuiltInCommand ?
 class CopyCommand : public BuiltInCommand {
+    string cmd_line;
 public:
     CopyCommand(const char* cmd_line);
     virtual ~CopyCommand() {}
@@ -190,7 +211,8 @@ class SmallShell {
   string prompt;
   string last_dir;
  public:
-  Command *CreateCommand(const char* cmd_line);
+  SmallShell();
+  Command* CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
   void operator=(SmallShell const&)  = delete; // disable = operator
   static SmallShell& getInstance() // make SmallShell singleton
@@ -202,7 +224,7 @@ class SmallShell {
   ~SmallShell();
   void executeCommand(const char* cmd_line);
   void changePrompt(string prompt);
-  // TODO: add extra methods as needed
+  string& getPrompt();
 };
 
 #endif //SMASH_COMMAND_H_

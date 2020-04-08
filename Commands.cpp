@@ -82,6 +82,100 @@ void _removeBackgroundSign(char* cmd_line) {
   cmd_line[str.find_last_not_of(WHITESPACE, idx) + 1] = 0;
 }
 
+//---------------------------JOBS LISTS------------------------------
+
+void JobsList::addJob(Command* cmd, bool is_stopped) {
+    // call removeFinishedJobs
+    // if empty, jobID = 1
+    // insert into map with jobID = max jobid + 1
+}
+void JobsList::printJobsList() {
+    // call removeFinishedJobs
+    // iterate the map
+    // print each job by the format
+}
+void JobsList::killAllJobs() {
+    // interate on map, print message and send SIGKILL
+}
+void JobsList::removeFinishedJobs() {
+    // iterate on map, and waitpid with each pid WNOHANG flag
+    // check return waitpid, if job was "waited" then remove from map
+}
+JobEntry* JobsList::getJobById(JobID jobId) {
+    // return from map
+}
+void JobsList::removeJobById(JobID jobId) {
+    // remove from map
+}
+JobEntry* JobsList::getLastJob(JobID* lastJobId) {
+    // return last in map
+}
+JobEntry* JobsList::getLastStoppedJob(JobID* jobId) {
+    // iterate and find last stopped job return it
+}
+
+//-------------------------SPECIAL COMMANDS-------------------------
+PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) {
+    // save cmd and shell
+}
+void PipeCommand::execute() {
+    // create new pipe
+    // fork two new childs
+        // first child:
+        // call setpgrp() syscall - make sure that the child get different GROUP ID
+        // close read in pipe
+        // put write side of pipe in stdout or stderr (if with |&)
+        // shell.execute command with first half of the cmd
+
+        // second child:
+        // call setpgrp() syscall - make sure that the child get different GROUP ID
+        // close write in pipe
+        // put read side in stdin
+        // shell.execute command with second half of the cmd
+
+        //father:
+        // close both sides of pipe
+        // if & add both jobs to jobs list
+       // else CURR_FORK =..., waitpid for both of them
+        // CURR_ FORK.. =0
+}
+
+RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) {
+    // save cmd and shell
+}
+void RedirectionCommand::execute() {
+    // fork
+        // child:
+        // stpgrp
+        // close stdout
+        // open in place 2 new file
+        // if >> you need append, if > overwrite
+        // shell.execute with the & if there is one
+
+        // parent:
+        // else CURR_FORK =..., waitpid
+        // CURR_ FORK.. =0
+}
+
+//---------------------------EXTERNAL CLASSES------------------------------
+ExternalCommand::ExternalCommand(const char* cmd_line, JobsList* jobs) {
+   // save jobs, and cmd
+}
+
+void ExternalCommand::execute() {
+    // fork to child
+    //child:
+    // remove &
+    // call setpgrp() syscall - make sure that the child get different GROUP ID
+    // execv to shell with cmd without &
+
+    //parent:
+    // if with "&" add job to JOBS LIST and return
+    // else, // else CURR_FORK =..., waitpid with UNTRACED
+    //        // CURR_ FORK.. =0
+    // if son still running (STOPPED and not zombie) add to jobs list
+}
+
 //---------------------------BUILT IN CLASSES------------------------------
 ChangePromptCommand::ChangePromptCommand(const char* cmd_line, SmallShell* shell) {
     // no argument = change to default prompt
@@ -154,7 +248,8 @@ void ForegroundCommand::execute() {
     // remove from jobs list
     // print job's command line
     // send SIGCONT to job's pid
-    // WAIT PID
+    // CURR_FORK =..., waitpid
+    // CURR_ FORK.. =0
 }
 
 BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) {
@@ -169,7 +264,7 @@ void BackgroundCommand::execute() {
     // print cmd line of job
     // change to NOT STOPPED in jobs list
     // send SIGCONT to job's pid
-    // no wait
+    // no waitpid
 }
 
 QuitCommand::QuitCommand(const char* cmd_line, JobsList* jobs) {
@@ -180,24 +275,35 @@ void QuitCommand::execute() {
     // if (kill_all) ...
     // exit(0);
 }
+
+CopyCommand::CopyCommand(const char* cmd_line) {
+    // save cmd line;
+}
+void CopyCommand::execute() {
+    // open the new file place and the prev file
+    // fork
+        // child
+        // setpgrp
+        // loop:
+        // read from prev and write to new file in chuncks
+
+        // father
+        // if with & add to job list
+        // else CURR_FORK =..., waitpid
+        // CURR_ FORK.. =0
+}
 //---------------------------END OF BUILT IN--------------------------------
-ExternalCommand::ExternalCommand(const char* cmd_line);
-    virtual ExternalCommand::~ExternalCommand();
-    void ExternalCommand::execute() override;
-// if with "&" don't wait
+
 
 SmallShell::SmallShell() {
-// TODO: add your implementation
-}
-
-SmallShell::~SmallShell() {
-// TODO: add your implementation
+    // prompt = Smash
+    // CURR_FORK.. = 0
 }
 
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
-Command * SmallShell::CreateCommand(const char* cmd_line) {
+Command* SmallShell::CreateCommand(const char* cmd_line) {
 	// For example:
     // > >> | |&
     // if one of those, create special class
@@ -209,8 +315,7 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
   else if ...
   .....
   else {
-    if with "&" add job to JOBS LIST
-    return new ExternalCommand(cmd_line);
+    return new ExternalCommand(cmd_line, jobs);
   }
   */
   return nullptr;
