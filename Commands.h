@@ -49,35 +49,9 @@ class RedirectionCommand : public Command {
   //void cleanup() override;
 };
 
-class ChangeDirCommand : public BuiltInCommand {
-// TODO: Add your data members public:
-  ChangeDirCommand(const char* cmd_line, char** plastPwd);
-  virtual ~ChangeDirCommand() {}
-  void execute() override;
-};
-
-class GetCurrDirCommand : public BuiltInCommand {
- public:
-  GetCurrDirCommand(const char* cmd_line);
-  virtual ~GetCurrDirCommand() {}
-  void execute() override;
-};
-
-class ShowPidCommand : public BuiltInCommand {
- public:
-  ShowPidCommand(const char* cmd_line);
-  virtual ~ShowPidCommand() {}
-  void execute() override;
-};
-
 class JobsList;
-class QuitCommand : public BuiltInCommand {
-// TODO: Add your data members public:
-  QuitCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~QuitCommand() {}
-  void execute() override;
-};
 
+/*
 class CommandsHistory {
  protected:
   class CommandHistoryEntry {
@@ -98,11 +72,13 @@ class HistoryCommand : public BuiltInCommand {
   virtual ~HistoryCommand() {}
   void execute() override;
 };
+*/
 
 class JobsList {
  public:
   class JobEntry {
-   // TODO: Add your data members
+   int pid;
+   string cmd_str;
   };
  // TODO: Add your data members
  public:
@@ -119,54 +95,100 @@ class JobsList {
   // TODO: Add extra methods or modify exisitng ones as needed
 };
 
+//---------------------------BUILT IN CLASSES------------------------------
+// maybe timeout ?
+class ChangePromptCommand : public BuiltInCommand {
+    string prompt;
+    SmallShell* shell;
+public:
+    ChangePromptCommand(const char* cmd_line, SmallShell* shell);
+    virtual ~ChangePromptCommand() {}
+    void execute() override;
+};
+
+
+class ShowPidCommand : public BuiltInCommand {
+public:
+    ShowPidCommand(const char* cmd_line) = default;
+    virtual ~ShowPidCommand() {}
+    void execute() override;
+};
+
+class GetCurrDirCommand : public BuiltInCommand {
+public:
+    GetCurrDirCommand(const char* cmd_line);
+    virtual ~GetCurrDirCommand() {}
+    void execute() override;
+};
+
+class ChangeDirCommand : public BuiltInCommand {
+    string new_path;
+    string* last_dir;
+public:
+    ChangeDirCommand(const char* cmd_line, string* last_dir);
+    virtual ~ChangeDirCommand() {}
+    void execute() override;
+};
+
 class JobsCommand : public BuiltInCommand {
- // TODO: Add your data members
- public:
-  JobsCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~JobsCommand() {}
-  void execute() override;
+    JobsList* jobs;
+public:
+    JobsCommand(const char* cmd_line, JobsList* jobs);
+    virtual ~JobsCommand() {}
+    void execute() override;
 };
 
 class KillCommand : public BuiltInCommand {
- // TODO: Add your data members
- public:
-  KillCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~KillCommand() {}
-  void execute() override;
+    int sig_num, pid;
+public:
+    KillCommand(const char* cmd_line, JobsList* jobs);
+    virtual ~KillCommand() {}
+    void execute() override;
 };
 
 class ForegroundCommand : public BuiltInCommand {
- // TODO: Add your data members
- public:
-  ForegroundCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~ForegroundCommand() {}
-  void execute() override;
+    int job_id;
+    JobsList* jobs;
+public:
+    ForegroundCommand(const char* cmd_line, JobsList* jobs);
+    virtual ~ForegroundCommand() {}
+    void execute() override;
 };
 
 class BackgroundCommand : public BuiltInCommand {
- // TODO: Add your data members
- public:
-  BackgroundCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~BackgroundCommand() {}
-  void execute() override;
+    int job_id;
+    JobsList* jobs;
+public:
+    BackgroundCommand(const char* cmd_line, JobsList* jobs);
+    virtual ~BackgroundCommand() {}
+    void execute() override;
 };
 
+class QuitCommand : public BuiltInCommand {
+    bool kill_all;
+    JobsList* jobs;
+public:
+    QuitCommand(const char* cmd_line, JobsList* jobs);
+    virtual ~QuitCommand() {}
+    void execute() override;
+};
 
 // TODO: should it really inhirit from BuiltInCommand ?
 class CopyCommand : public BuiltInCommand {
- public:
-  CopyCommand(const char* cmd_line);
-  virtual ~CopyCommand() {}
-  void execute() override;
+public:
+    CopyCommand(const char* cmd_line);
+    virtual ~CopyCommand() {}
+    void execute() override;
 };
-
-// TODO: add more classes if needed 
-// maybe chprompt , timeout ?
+//---------------------------END OF BUILT IN--------------------------------
 
 class SmallShell {
  private:
   // TODO: Add your data members
   SmallShell();
+  JobsList jobs;
+  string prompt;
+  string last_dir;
  public:
   Command *CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
@@ -179,6 +201,7 @@ class SmallShell {
   }
   ~SmallShell();
   void executeCommand(const char* cmd_line);
+  void changePrompt(string prompt);
   // TODO: add extra methods as needed
 };
 
