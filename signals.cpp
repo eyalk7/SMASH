@@ -10,7 +10,7 @@ void ctrlZHandler(int sig_num) {
 	if (CURR_FORK_CHILD_RUNNING == 0) return;
 
     // send SIGSTOP to CURR_FORK_CHILD_RUNNING
-    if (kill(CURR_FORK_CHILD_RUNNING, SIGSTOP) < 0) perror("smash error: kill failed");
+    if (kill(CURR_FORK_CHILD_RUNNING, SIGTSTP) < 0) perror("smash error: kill failed");
 
     // print message
     cout << "smash: process " << CURR_FORK_CHILD_RUNNING << " was stopped" << endl;

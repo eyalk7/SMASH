@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <assert.h>
 
 using std::vector;
 using std::string;
@@ -21,7 +22,8 @@ using std::map;
 #define COMMAND_MAX_ARGS (20)
 #define HISTORY_MAX_RECORDS (50)
 
-pid_t CURR_FORK_CHILD_RUNNING;
+// declaration of CURR_FORK_CHILD_RUNNING
+extern pid_t CURR_FORK_CHILD_RUNNING;
 
 class SmallShell;
 
@@ -29,40 +31,14 @@ class Command {
 protected:
     string cmd_line;
  public:
-    explicit Command(const char* cmd_line);
-  virtual ~Command();
-  virtual void execute() = 0;
-  //virtual void prepare();
-  //virtual void cleanup();
-  // TODO: Add your extra methods if needed
+    explicit Command(const char* cmd_line) : cmd_line(cmd_line) {};
+    virtual ~Command() = default;
+    virtual void execute() = 0;
 };
-
-/*
-class CommandsHistory {
- protected:
-  class CommandHistoryEntry {
-	  // TODO: Add your data members
-  };
- // TODO: Add your data members
- public:
-  CommandsHistory();
-  ~CommandsHistory() {}
-  void addRecord(const char* cmd_line);
-  void printHistory();
-};
-
-class HistoryCommand : public BuiltInCommand {
- // TODO: Add your data members
- public:
-  HistoryCommand(const char* cmd_line, CommandsHistory* history);
-  virtual ~HistoryCommand() {}
-  void execute() override;
-};
-*/
 
 //---------------------------JOBS LISTS------------------------------
 struct JobEntry {
-    JobEntry(pid_t pid, const string& cmd_str, bool is_stopped);
+    explicit JobEntry(pid_t pid = 0, const string& cmd_str = "", bool is_stopped = false);
     pid_t pid;
     string cmd_str;
     bool is_stopped;
@@ -73,7 +49,7 @@ typedef int JobID;
 class JobsList {
 public:
     JobsList() = default;
-    ~JobsList();
+    ~JobsList() = default;
     void addJob(pid_t pid, const string& cmd_str, bool is_stopped = false);
     void printJobsList();
     void killAllJobs();
@@ -81,7 +57,7 @@ public:
     JobEntry* getJobById(JobID jobId);
     void removeJobById(JobID jobId);
     JobEntry* getLastJob(JobID* lastJobId);
-    JobEntry*getLastStoppedJob(JobID* jobId);
+    JobEntry* getLastStoppedJob(JobID* jobId);
 
 private:
   map<JobID,JobEntry> jobs;
@@ -124,11 +100,10 @@ public:
 
 
 //---------------------------BUILT IN CLASSES------------------------------
-// maybe timeout ?
 
 class BuiltInCommand : public Command {
 public:
-    explicit BuiltInCommand(const char* cmd_line);
+    explicit BuiltInCommand(const char* cmd_line) : Command(cmd_line) {};
     virtual ~BuiltInCommand() = default;
 };
 
@@ -174,10 +149,11 @@ public:
 };
 
 class KillCommand : public BuiltInCommand {
-    int signum, pid;
+    int signum, job_id;
+    JobsList* jobs;
     bool parseAndCheck(const char* cmd_line, int* signum, JobID* job_id);
     void printArgumentsError();
-    void printJobError(JobID job_id);
+    void printJobError();
     void printSignalSent(int signum, pid_t pid);
 
 public:

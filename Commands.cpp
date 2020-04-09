@@ -8,6 +8,9 @@
 
 using namespace std;
 
+// definition of CURR_FORK_CHILD_RUNNING
+pid_t CURR_FORK_CHILD_RUNNING = 0;
+
 const std::string WHITESPACE = " \n\r\t\f\v";
 
 #if 0
@@ -127,11 +130,13 @@ void JobsList::printJobsList() {
     for (const auto& job : jobs) {
         auto curr_time = time(nullptr);
         if (curr_time == (time_t)(-1)) perror("smash error: time failed");
+        auto diff_time = difftime(curr_time, job.second.start_time);
+        if (diff_time == (time_t)(-1)) perror("smash error: difftime failed");
 
         cout << "[" << job.first << "]";
         cout << " " << job.second.cmd_str;
         cout << " : " << job.second.pid;
-        cout << " " << difftime(job.second.start_time, curr_time);
+        cout << " " << diff_time << " secs";
         if (job.second.is_stopped) cout << " (stopped)";
         cout << endl;
     }
@@ -139,10 +144,11 @@ void JobsList::printJobsList() {
 void JobsList::killAllJobs() {
     cout << "smash: sending SIGKILL signal to " << jobs.size() << " jobs:" << endl;
 
-    // interate on map, print message and send SIGKILL
+    // interate on map, print message and send SIGKILL than wait them
     for (const auto& job : jobs) {
-        cout << job.second.pid << " " << job.second.cmd_str;
+        cout << job.second.pid << " " << job.second.cmd_str << endl;
         if (kill(job.second.pid, SIGKILL) < 0) perror("smash error: kill failed");
+        if (waitpid(job.second.pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
     }
 }
 void JobsList::removeFinishedJobs() {
@@ -153,7 +159,7 @@ void JobsList::removeFinishedJobs() {
     for (const auto& job : jobs) {
         pid_t waited = waitpid(job.second.pid, nullptr, WNOHANG);
         if (waited < 0) perror("smash error: waitpid failed");
-        if (waited > 0) to_remove[to_remove_iter++] = waited;
+        if (waited > 0) to_remove[to_remove_iter++] = job.first;
     }
 
     // remove from map all waited jobs
@@ -162,16 +168,25 @@ void JobsList::removeFinishedJobs() {
     }
 }
 JobEntry* JobsList::getJobById(JobID jobId) {
+    // remove zombies from jobs list
+    removeFinishedJobs();
+
     if (jobs.count(jobId) == 0) return nullptr;
     // return from map
     return &jobs[jobId];
 }
 void JobsList::removeJobById(JobID jobId) {
+    // remove zombies from jobs list
+    removeFinishedJobs();
+
     if (jobs.count(jobId) > 0) {
         jobs.erase(jobId);
     }
 }
 JobEntry* JobsList::getLastJob(JobID* lastJobId) {
+    // remove zombies from jobs list
+    removeFinishedJobs();
+
     if (jobs.empty()) return nullptr;
 
     // return last in map
@@ -180,6 +195,9 @@ JobEntry* JobsList::getLastJob(JobID* lastJobId) {
     return &(last_job->second);
 }
 JobEntry* JobsList::getLastStoppedJob(JobID* jobId) {
+    // remove zombies from jobs list
+    removeFinishedJobs();
+
     // iterate and find last stopped job return it
     for (auto iter = jobs.rbegin(); iter != jobs.rend(); iter++) {
         if (iter->second.is_stopped) {
@@ -285,7 +303,7 @@ void ExternalCommand::execute() {
             if (waitpid(pid, &status, WUNTRACED) < 0) {
                 perror("smash error: waitpid failed");
             } else {
-                if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_line);
+                if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_line, true);
             }
             CURR_FORK_CHILD_RUNNING = 0;
         }
@@ -338,9 +356,11 @@ void JobsCommand::execute() {
     // jobs.print...
 }
 
-KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line), signum(0), pid(0) {
+KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
+                                                                    signum(0),
+                                                                    job_id(0),
+                                                                    jobs(jobs) {
     // parse: type of signal and jobID, if syntax not valid print error
-    int job_id;
     if (!parseAndCheck(cmd_line, &signum, &job_id)) {
         printArgumentsError();
         return;
@@ -349,21 +369,26 @@ KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(
     // if job id not exist print error message
     auto job_entry = jobs->getJobById(job_id);
     if (!job_entry) {
-        printJobError(job_id);
+        printJobError();
+        job_id = 0;
         return;
     }
-
-    // all OK
-    pid = job_entry->pid;
 }
 void KillCommand::execute() {
-    if (pid == 0 || signum == 0) return;
+    if (job_id == 0 || signum == 0) return;
+    auto job_entry = jobs->getJobById(job_id);
 
     // send signal, print message
-    if (kill(pid, signum) < 0)perror("smash error: kill failed");
-    printSignalSent(signum, pid);
+    if (kill(job_entry->pid, signum) < 0) perror("smash error: kill failed");
+    printSignalSent(signum, job_entry->pid);
+
+    // if signal was SIGSTOP or SIGTSTP update job state to stopped
+    if (signum == SIGSTOP || signum == SIGTSTP) job_entry->is_stopped = true;
+
+    // if signal was SIGCONT update job state to not stopped
+    if (signum == SIGCONT) job_entry->is_stopped = false;
 }
-bool KillCommand::parseAndCheck(const char* cmd_line, int* signum, JobID* job_id) {
+bool KillCommand::parseAndCheck(const char* cmd_line, int* sig, JobID* j_id) {
     string first_arg, second_arg;
 
     // parse
@@ -381,9 +406,9 @@ bool KillCommand::parseAndCheck(const char* cmd_line, int* signum, JobID* job_id
     if ((int)first_arg.size() > 3) return false;
     if (first_arg[0] != '-') return false;
     if (!isdigit(first_arg[1])) return false;
-    if ((int)first_arg.size() == 2 && !isdigit(first_arg[2])) return false;
-    int sig = stoi(first_arg.substr(1));
-    if (sig < 1 || sig > 31) return false;
+    if ((int)first_arg.size() == 3 && !isdigit(first_arg[2])) return false;
+    *sig = stoi(first_arg.substr(1));
+    if (*sig < 1 || *sig > 31) return false;
 
     // check second argument
     if ((int)second_arg.size() > 10) return false;
@@ -392,18 +417,17 @@ bool KillCommand::parseAndCheck(const char* cmd_line, int* signum, JobID* job_id
     if (job > numeric_limits<int>::max() || job < 1) return false;
 
     // all OK
-    *signum = (int)sig;
-    *job_id = (int)job;
+    *j_id = (int)job;
     return true;
 }
 void KillCommand::printArgumentsError() {
     cout << "smash error: kill: invalid arguments" << endl;
 }
-void KillCommand::printJobError(JobID job_id) {
+void KillCommand::printJobError() {
     cout << "smash error: kill: job-id " << job_id << " does not exist" << endl;
 }
-void KillCommand::printSignalSent(int signum, pid_t pid) {
-    cout << "signal number " << signum << " was sent to pid " << pid << endl;
+void KillCommand::printSignalSent(int sig, pid_t p) {
+    cout << "signal number " << sig << " was sent to pid " << p << endl;
 }
 
 ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
@@ -412,6 +436,7 @@ ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    
     // if num of argument not valid or syntax problem print error
     if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
         printArgumentsError();
+        job_id = -1;
         return;
     }
 
@@ -423,7 +448,7 @@ ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    
     }
 }
 void ForegroundCommand::execute() {
-    if (job_id < 0) return;
+    if (job_id < 0) return; // error in arguments or job not exist
 
     JobEntry* job;
     // if job_id == 0 than get the last job
@@ -476,6 +501,7 @@ BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : Bui
     // if num of argument not valid or syntax problem print error
     if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
         printArgumentsError();
+        job_id = -1;
         return;
     }
 
@@ -492,7 +518,7 @@ BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : Bui
     }
 }
 void BackgroundCommand::execute() {
-    if (job_id < 0) return;
+    if (job_id < 0) return; // error in arguments or job not exist
 
     JobEntry* job = nullptr;
     // if job_id == 0 than get the last job
