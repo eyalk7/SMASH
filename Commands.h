@@ -22,6 +22,7 @@ using std::map;
 #define COMMAND_MAX_ARGS (20)
 #define COMMAND_MAX_CHARS (80)
 #define MAX_PROCESS_COUNT (100)
+#define MAX_PATH_LENGTH (80) // TO DO: SET THIS CORRECTLY
 
 // declaration of CURR_FORK_CHILD_RUNNING
 extern pid_t CURR_FORK_CHILD_RUNNING;

@@ -330,7 +330,7 @@ void ShowPidCommand::execute() {
 }
 
 void GetCurrDirCommand::execute() {
-    char* dir = getcwd(nullptr, COMMAND_MAX_CHARS+1);
+    char* dir = getcwd(nullptr, MAX_PATH_LENGTH + 1);
     std::cout << dir << endl;
     free(dir);
 }
