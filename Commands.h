@@ -210,7 +210,7 @@ public:
 
 class SmallShell {
  private:
-  JobsList jobs;
+  JobsList* jobs;
   string prompt;
   string last_dir;
  public:
@@ -218,13 +218,13 @@ class SmallShell {
   Command* CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
   void operator=(SmallShell const&)  = delete; // disable = operator
+  ~SmallShell();
   static SmallShell& getInstance() // make SmallShell singleton
   {
     static SmallShell instance; // Guaranteed to be destroyed.
     // Instantiated on first use.
     return instance;
   }
-  ~SmallShell();
   void executeCommand(const char* cmd_line);
   void changePrompt(string prompt);
   string& getPrompt();

@@ -34,18 +34,15 @@ string _ltrim(const std::string& s)
   size_t start = s.find_first_not_of(WHITESPACE);
   return (start == std::string::npos) ? "" : s.substr(start);
 }
-
 string _rtrim(const std::string& s)
 {
   size_t end = s.find_last_not_of(WHITESPACE);
   return (end == std::string::npos) ? "" : s.substr(0, end + 1);
 }
-
 string _trim(const std::string& s)
 {
   return _rtrim(_ltrim(s));
 }
-
 int _parseCommandLine(const char* cmd_line, char** args) {
   FUNC_ENTRY()
   int i = 0;
@@ -60,12 +57,10 @@ int _parseCommandLine(const char* cmd_line, char** args) {
 
   FUNC_EXIT()
 }
-
 bool _isBackgroundCommand(const char* cmd_line) {
   const string str(cmd_line);
   return str[str.find_last_not_of(WHITESPACE)] == '&';
 }
-
 void _removeBackgroundSign(char* cmd_line) {
   const string str(cmd_line);
   // find last character other than spaces
@@ -100,6 +95,8 @@ bool checkAndRemoveAmpersand(string& str) {
 
     // erase
     str.erase(idx);
+
+    return true;
 }
 
 //---------------------------JOBS LISTS------------------------------
@@ -315,11 +312,13 @@ void ExternalCommand::execute() {
 
 //---------------------------BUILT IN CLASSES------------------------------
 ChangePromptCommand::ChangePromptCommand(const char* cmd_line, SmallShell* shell) : BuiltInCommand(cmd_line) {
-    char** args;
-    int arg_count = _parseCommandLine(cmd_line, args);
+    char* args[21];
+    int num_of_args = _parseCommandLine(cmd_line, args);
 
-    if (arg_count == 0) prompt = "smash";   // no argument = change to default prompt
-    else prompt = args[0];                   // save prompt string
+    if (num_of_args < 2) prompt = "smash";   // no argument = change to default prompt
+    else prompt = args[1];                   // save prompt string
+
+    for (int i = 0; i < num_of_args; i++) free(args[i]);
 
     // save shell pointer
     this->shell = shell;
@@ -616,16 +615,20 @@ void CopyCommand::execute() {
 //---------------------------END OF BUILT IN--------------------------------
 
 //---------------------------SMALL SHELL--------------------------------------
-SmallShell::SmallShell() {
-    // prompt = Smash
-    // CURR_FORK.. = 0
+SmallShell::SmallShell() : prompt("smash"), last_dir("") {
+    jobs = new JobsList();
+    CURR_FORK_CHILD_RUNNING = 0;
+}
+
+SmallShell::~SmallShell() {
+    delete jobs;
 }
 
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 Command* SmallShell::CreateCommand(const char* cmd_line) {
-    string cmd_s = string(cmd_line);
+    string cmd_s = _trim(string(cmd_line));
     if (cmd_s.find("|") >= 0) {
         return new PipeCommand(cmd_line, this);
     } else if (cmd_s.find(">") >= 0) {
@@ -643,13 +646,13 @@ Command* SmallShell::CreateCommand(const char* cmd_line) {
     } else if (cmd_s.find("kill") == 0) {
         return new KillCommand(cmd_line, &this->jobs);
     } else if (cmd_s.find("fg") == 0) {
-        return new ForegroundCommand(cmd_line, &this->jobs);
+        return new ForegroundCommand(cmd_line, this->jobs);
     } else if (cmd_s.find("bg") == 0) {
-        return new BackgroundCommand(cmd_line, &this->jobs);
+        return new BackgroundCommand(cmd_line, this->jobs);
     } else if (cmd_s.find("quit") == 0) {
-        return new QuitCommand(cmd_line, &this->jobs);
+        return new QuitCommand(cmd_line, this->jobs);
     } else {
-        return new ExternalCommand(cmd_line, &this->jobs);
+        return new ExternalCommand(cmd_line, this->jobs);
     }
 }
 
