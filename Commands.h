@@ -20,7 +20,8 @@ using std::map;
 
 #define COMMAND_ARGS_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
-#define HISTORY_MAX_RECORDS (50)
+#define COMMAND_MAX_CHARS (80)
+#define MAX_PROCESS_COUNT (100)
 
 // declaration of CURR_FORK_CHILD_RUNNING
 extern pid_t CURR_FORK_CHILD_RUNNING;
@@ -108,8 +109,8 @@ public:
 };
 
 class ChangePromptCommand : public BuiltInCommand {
-    string prompt;
     SmallShell* shell;
+    string prompt;
 public:
     ChangePromptCommand(const char* cmd_line, SmallShell* shell);
     virtual ~ChangePromptCommand() = default;
@@ -126,7 +127,7 @@ public:
 
 class GetCurrDirCommand : public BuiltInCommand {
 public:
-    explicit GetCurrDirCommand(const char* cmd_line);
+    explicit GetCurrDirCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {}
     virtual ~GetCurrDirCommand() = default;
     void execute() override;
 };

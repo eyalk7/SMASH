@@ -149,7 +149,7 @@ void JobsList::killAllJobs() {
     }
 }
 void JobsList::removeFinishedJobs() {
-    vector<JobID> to_remove(100,0);
+    vector<JobID> to_remove(100,0); // MAX_PROCESS_COUNT ?
     int to_remove_iter= 0;
 
     // iterate on map, and waitpid with each pid WNOHANG flag
@@ -230,7 +230,6 @@ void PipeCommand::execute() {
        // else CURR_FORK =..., waitpid for both of them
         // CURR_ FORK.. =0
 }
-
 RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
                                                                                     shell(shell),
                                                                                     to_append(false) {
@@ -269,7 +268,6 @@ void RedirectionCommand::execute() {
     if (close(stdout_fd) < 0) perror("smash error: close failed");
     if (close(file_fd) < 0) perror("smash error: close failed");
 }
-
 //---------------------------EXTERNAL CLASSES------------------------------
 ExternalCommand::ExternalCommand(const char* cmd_line, JobsList* jobs) :    Command(cmd_line),
                                                                             jobs(jobs),
@@ -311,31 +309,30 @@ void ExternalCommand::execute() {
 }
 
 //---------------------------BUILT IN CLASSES------------------------------
-ChangePromptCommand::ChangePromptCommand(const char* cmd_line, SmallShell* shell) : BuiltInCommand(cmd_line) {
-    char* args[21];
+ChangePromptCommand::ChangePromptCommand(const char* cmd_line, SmallShell* shell) : BuiltInCommand(cmd_line),
+                                                                                    shell(shell),
+                                                                                    prompt("smash") {
+    // no argument = change to default prompt "smash"
+    // otherwise, get the new prompt text
+    char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
-
-    if (num_of_args < 2) prompt = "smash";   // no argument = change to default prompt
-    else prompt = args[1];                   // save prompt string
-
+    if (num_of_args > 1) prompt = args[1]; // save prompt string
     for (int i = 0; i < num_of_args; i++) free(args[i]);
-
-    // save shell pointer
-    this->shell = shell;
 }
 void ChangePromptCommand::execute() {
-    // shell change prompt with string
+    // change shell prompt
     shell->changePrompt(prompt);
 }
 
 void ShowPidCommand::execute() {
-    // "smash pid is:" ...
-    // syscall getpid()
+    // print shell's pid
+    std::cout << "smash pid is " << getpid() << endl;
 }
 
 void GetCurrDirCommand::execute() {
-    //
-    // syscall getcwd()
+    char* dir = getcwd(nullptr, COMMAND_MAX_CHARS+1);
+    std::cout << dir << endl;
+    free(dir);
 }
 
 ChangeDirCommand::ChangeDirCommand(const char* cmd_line, string* last_dir) : BuiltInCommand(cmd_line) {
@@ -396,7 +393,7 @@ bool KillCommand::parseAndCheck(const char* cmd_line, int* sig, JobID* j_id) {
     string first_arg, second_arg;
 
     // parse
-    char* args[21];
+    char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
     if (num_of_args == 3) {
         first_arg = args[1];
@@ -562,7 +559,7 @@ bool parseAndCheckFgBgCommands(const char* cmd_line, JobID* job_id) {
     string arg;
 
     // parse
-    char* args[21];
+    char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
     if (num_of_args == 2) arg = args[1];
     for (int i = 0; i < num_of_args; i++) free(args[i]);
@@ -583,7 +580,7 @@ QuitCommand::QuitCommand(const char* cmd_line, JobsList* jobs) :    BuiltInComma
                                                                     kill_all(false),
                                                                     jobs(jobs) {
     // parse
-    char* args[21];
+    char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
     if (num_of_args > 1) {
         string arg = args[1];
@@ -629,17 +626,17 @@ SmallShell::~SmallShell() {
 */
 Command* SmallShell::CreateCommand(const char* cmd_line) {
     string cmd_s = _trim(string(cmd_line));
-    if (cmd_s.find("|") >= 0) {
+/*    if (cmd_s.find("|") >= 0) {
         return new PipeCommand(cmd_line, this);
     } else if (cmd_s.find(">") >= 0) {
         return new RedirectionCommand(cmd_line, this);
-    } else if (cmd_s.find("chprompt") == 0) {
+    } else*/ if (cmd_s.find("chprompt") == 0) {
         return new ChangePromptCommand(cmd_line, this);
     } else if (cmd_s.find("showpid") == 0) {
         return new ShowPidCommand(cmd_line);
     } else if (cmd_s.find("pwd") == 0) {
         return new GetCurrDirCommand(cmd_line);
-    } else if (cmd_s.find("cd") == 0) {
+/*    } else if (cmd_s.find("cd") == 0) {
         return new ChangeDirCommand(cmd_line, &this->last_dir);
     } else if (cmd_s.find("jobs") == 0) {
         return new JobsCommand(cmd_line, &this->jobs);
@@ -648,7 +645,7 @@ Command* SmallShell::CreateCommand(const char* cmd_line) {
     } else if (cmd_s.find("fg") == 0) {
         return new ForegroundCommand(cmd_line, this->jobs);
     } else if (cmd_s.find("bg") == 0) {
-        return new BackgroundCommand(cmd_line, this->jobs);
+        return new BackgroundCommand(cmd_line, this->jobs);*/
     } else if (cmd_s.find("quit") == 0) {
         return new QuitCommand(cmd_line, this->jobs);
     } else {
