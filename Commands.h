@@ -199,7 +199,7 @@ public:
     void execute() override;
 };
 
-// TODO: should it really inhirit from BuiltInCommand ?
+// TODO: should it really inherit from BuiltInCommand ?
 class CopyCommand : public BuiltInCommand {
 public:
     explicit CopyCommand(const char* cmd_line);

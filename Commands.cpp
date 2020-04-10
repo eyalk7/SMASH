@@ -61,7 +61,7 @@ int _parseCommandLine(const char* cmd_line, char** args) {
   FUNC_EXIT()
 }
 
-bool _isBackgroundComamnd(const char* cmd_line) {
+bool _isBackgroundCommand(const char* cmd_line) {
   const string str(cmd_line);
   return str[str.find_last_not_of(WHITESPACE)] == '&';
 }
@@ -268,7 +268,7 @@ void RedirectionCommand::execute() {
     shell->executeCommand(cmd_part.c_str());
 
     // restore stdout and close all new file descriptors
-    if (dup2(stdout_fd, 1) < 0) perror("smash error: dup2 failed");;
+    if (dup2(stdout_fd, 1) < 0) perror("smash error: dup2 failed");
     if (close(stdout_fd) < 0) perror("smash error: close failed");
     if (close(file_fd) < 0) perror("smash error: close failed");
 }
@@ -315,13 +315,18 @@ void ExternalCommand::execute() {
 
 //---------------------------BUILT IN CLASSES------------------------------
 ChangePromptCommand::ChangePromptCommand(const char* cmd_line, SmallShell* shell) : BuiltInCommand(cmd_line) {
-    // no argument = change to default prompt
-    // get first argument
-    // save prompt string
+    char** args;
+    int arg_count = _parseCommandLine(cmd_line, args);
+
+    if (arg_count == 0) prompt = "smash";   // no argument = change to default prompt
+    else prompt = args[0];                   // save prompt string
+
     // save shell pointer
+    this->shell = shell;
 }
 void ChangePromptCommand::execute() {
     // shell change prompt with string
+    shell->changePrompt(prompt);
 }
 
 void ShowPidCommand::execute() {
@@ -620,37 +625,48 @@ SmallShell::SmallShell() {
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 Command* SmallShell::CreateCommand(const char* cmd_line) {
-	// For example:
-    // > >> | |&
-    // if one of those, create special class
-/*
-  string cmd_s = string(cmd_line);
-  if (cmd_s.find("pwd") == 0) {
-    return new GetCurrDirCommand(cmd_line);
-  }
-  else if ...
-  .....
-  else {
-    return new ExternalCommand(cmd_line, jobs);
-  }
-  */
-  return nullptr;
+    string cmd_s = string(cmd_line);
+    if (cmd_s.find("|") >= 0) {
+        return new PipeCommand(cmd_line, this);
+    } else if (cmd_s.find(">") >= 0) {
+        return new RedirectionCommand(cmd_line, this);
+    } else if (cmd_s.find("chprompt") == 0) {
+        return new ChangePromptCommand(cmd_line, this);
+    } else if (cmd_s.find("showpid") == 0) {
+        return new ShowPidCommand(cmd_line);
+    } else if (cmd_s.find("pwd") == 0) {
+        return new GetCurrDirCommand(cmd_line);
+    } else if (cmd_s.find("cd") == 0) {
+        return new ChangeDirCommand(cmd_line, &this->last_dir);
+    } else if (cmd_s.find("jobs") == 0) {
+        return new JobsCommand(cmd_line, &this->jobs);
+    } else if (cmd_s.find("kill") == 0) {
+        return new KillCommand(cmd_line, &this->jobs);
+    } else if (cmd_s.find("fg") == 0) {
+        return new ForegroundCommand(cmd_line, &this->jobs);
+    } else if (cmd_s.find("bg") == 0) {
+        return new BackgroundCommand(cmd_line, &this->jobs);
+    } else if (cmd_s.find("quit") == 0) {
+        return new QuitCommand(cmd_line, &this->jobs);
+    } else {
+        return new ExternalCommand(cmd_line, &this->jobs);
+    }
 }
 
 void SmallShell::executeCommand(const char *cmd_line) {
-  // TODO: Add your implementation here
-  // for example:
-  // Command* cmd = CreateCommand(cmd_line);
-  // maybe nullptr
-  // cmd->execute();
-  // Please note that you must fork smash process for some commands (e.g., external commands....)
-  // delete class
+    // TODO: Add your implementation here
+    // for example:
+    Command *cmd = CreateCommand(cmd_line);
+    cmd->execute();
+    delete cmd;
+    // Please note that you must fork smash process for some commands (e.g., external commands....)
 }
 
 void SmallShell::changePrompt(string prompt) {
-
+    if (prompt == "") prompt = "smash";
+    else this->prompt = prompt;
 }
 
 string& SmallShell::getPrompt() {
-
+    return this->prompt;
 }
