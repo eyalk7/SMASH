@@ -332,7 +332,7 @@ void RedirectionCommand::execute() {
     if (close(stdout_fd) < 0) perror("smash error: close failed");
     if (close(file_fd) < 0) perror("smash error: close failed");
 }
-//---------------------------EXTERNAL CLASSES------------------------------
+//---------------------------EXTERNAL CLASS------------------------------
 ExternalCommand::ExternalCommand(const char* cmd_line, JobsList* jobs) :    Command(cmd_line),
                                                                             jobs(jobs),
                                                                             to_background(false),
@@ -683,11 +683,18 @@ void QuitCommand::execute() {
     exit(0);
 }
 
-CopyCommand::CopyCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {
-    // save cmd line;
-
+CopyCommand::CopyCommand(const char* cmd_line) : BuiltInCommand(cmd_line), old_path(""), new_path("") {
+    char* args[COMMAND_MAX_ARGS+1];
+    int num_of_args = _parseCommandLine(cmd_line, args);
+    if (num_of_args < 3) std::cout << "smash error: cp: not enough arguments" << std::endl;
+    else {
+        old_path = args[1];
+        new_path = args[2];
+    }
+    for (int i = 0; i < num_of_args; i++) free(args[i]);
 }
 void CopyCommand::execute() {
+    if (old_path.empty() || new_path.empty()) return;
 
     // open the new file place and the prev file
     // fork
