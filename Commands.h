@@ -209,6 +209,7 @@ public:
 
 // TODO: should it really inherit from BuiltInCommand ?
 class CopyCommand : public BuiltInCommand {
+    string old_path, new_path;
 public:
     explicit CopyCommand(const char* cmd_line);
     virtual ~CopyCommand() = default;

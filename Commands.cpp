@@ -210,20 +210,29 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
                                                                     shell(shell), has_ampersand(false), background(false) {
     string command(cmd_line);
     int pipe_index = command.find_first_of("|");
-    command1 = (command.substr(0, pipe_index)).c_str();
+
+    // set command1
+    string cmd1 = command.substr(0, pipe_index);
+    command1 = cmd1.c_str();
 
     if (cmd_line[pipe_index + 1] == '&') {
         has_ampersand = true;
         pipe_index++;         // in order for command2 to start after the ampersand
     }
 
-    int offset = 0;
-    if (cmd_line[command.length() -1 ] == '&') {
-        background = true;
-        offset = 1;         // in order to not include the & in command2
-    }
+    // check if & at the end
+    char* args[COMMAND_MAX_ARGS+1];
+    int num_of_args = _parseCommandLine(cmd_line, args);
+    if (args[num_of_args - 1] == '&' ) background = true;
+    for (int i = 0; i < num_of_args; i++) free(args[i]);
 
-    command2 = (command.substr(pipe_index+1, command.length() - pipe_index - 1 - offset)).c_str();
+    // set command2
+    string cmd2 = command.substr(pipe_index+1, command.length() - pipe_index - 1);
+    if (background) {
+        cmd2 =_trim(cmd2);
+        cmd2.pop_back(); // remove ampersand
+    }
+    command2 = cmd2.c_str();
 }
 void PipeCommand::execute() {
     int my_pipe[2];
@@ -239,8 +248,8 @@ void PipeCommand::execute() {
         if (dup2(my_pipe[1], write_channel) == -1) perror("smash error: dup2 failed");
 
         shell->executeCommand(command1); // execute the command before the pipe
-
-    } else if (pid1 < 1) perror("smash error: fork failed");
+        return;
+    } else if (pid1 < 1) { perror("smash error: fork failed"); return }
 
     pid_t pid2 = fork();
     if (pid2 == 0) {    // child process for command2
@@ -251,8 +260,8 @@ void PipeCommand::execute() {
         if (dup2(my_pipe[0], STDIN) == -1) perror("smash error: dup2 failed");
 
         shell->executeCommand(command2); // execute the command after the pipe
-
-    } else if (pid2 < 1) perror("smash error: fork failed");
+        return;
+    } else if (pid2 < 1) { perror("smash error: fork failed"); return; }
 
     close(my_pipe[0]);
     close(my_pipe[1]);
@@ -261,17 +270,28 @@ void PipeCommand::execute() {
         shell->addJob(pid1, command1);
         shell->addJob(pid2, command2);
     } else {
-        CURR_FORK_CHILD_RUNNING = pid1;
         int status;
-        if (waitpid(pid1, &status, WUNTRACED) < 0) {
-            perror("smash error: waitpid failed");
-        } else {
 
+        CURR_FORK_CHILD_RUNNING = pid2;
+        if (waitpid(pid2, &status, WUNTRACED) < 0) {  // wait for the second command to finish
+            perror("smash error: waitpid failed");
+        } else if (WIFSTOPPED(status)) {
+            // if SIGSTOP was called
+            // check if command1 finished
+            if (waitpid(pid1, &status, WNOHANG) < 0) perror("smash error: waitpid failed");
+
+            // if command1 didn't finish, send SIGSTOP
+            // and add it to the jobs list
+            if (!WIFEXITED(status)) {
+                if (kill(pid1, SIGTSTP) < 0) perror("smash error: kill failed");
+                shell->addJob(pid1, command1);
+            }
+
+            // add command2 to the jobs list
+            shell->addJob(pid2, command2);
         }
 
-
         CURR_FORK_CHILD_RUNNING = 0;
-
     }
 }
 RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
@@ -665,8 +685,10 @@ void QuitCommand::execute() {
 
 CopyCommand::CopyCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {
     // save cmd line;
+
 }
 void CopyCommand::execute() {
+
     // open the new file place and the prev file
     // fork
         // child
@@ -718,6 +740,8 @@ Command* SmallShell::CreateCommand(const char* cmd_line) {
         return new BackgroundCommand(cmd_line, this->jobs);
     } else if (cmd_s.find("quit ") == 0) {
         return new QuitCommand(cmd_line, this->jobs);
+    } else if (cmd_s.find("cp ") == 0) {
+        return new CopyCommand(cmd_line);
     } else {
         return new ExternalCommand(cmd_line, this->jobs);
     }
