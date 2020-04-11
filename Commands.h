@@ -22,7 +22,6 @@ using std::map;
 #define COMMAND_MAX_ARGS (20)
 #define COMMAND_MAX_CHARS (80)
 #define MAX_PROCESS_COUNT (100)
-#define MAX_PATH_LENGTH (80) // TO DO: SET THIS CORRECTLY
 
 // declaration of CURR_FORK_CHILD_RUNNING
 extern pid_t CURR_FORK_CHILD_RUNNING;
@@ -135,7 +134,7 @@ public:
 
 class ChangeDirCommand : public BuiltInCommand {
     string new_path;
-    string* last_dir;
+    string* old_pwd;
 public:
     ChangeDirCommand(const char* cmd_line, string* last_dir);
     virtual ~ChangeDirCommand() = default;
@@ -212,9 +211,9 @@ public:
 
 class SmallShell {
  private:
-  JobsList* jobs;
   string prompt;
-  string last_dir;
+  string old_pwd;
+  JobsList* jobs;
  public:
   SmallShell();
   Command* CreateCommand(const char* cmd_line);

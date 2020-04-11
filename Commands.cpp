@@ -330,24 +330,50 @@ void ShowPidCommand::execute() {
 }
 
 void GetCurrDirCommand::execute() {
-    char* dir = getcwd(nullptr, MAX_PATH_LENGTH + 1);
+    char* dir = getcwd(nullptr, COMMAND_MAX_CHARS + 1);
     std::cout << dir << endl;
     free(dir);
 }
 
-ChangeDirCommand::ChangeDirCommand(const char* cmd_line, string* last_dir) : BuiltInCommand(cmd_line) {
-    // save new_path and last_dir
-    // more than one argument == print error "too many argument"
+ChangeDirCommand::ChangeDirCommand(const char* cmd_line, string* last_dir) : BuiltInCommand(cmd_line),
+                                                                             new_path(""), old_pwd(last_dir) {
+    char* args[COMMAND_MAX_ARGS+1];
+    int num_of_args = _parseCommandLine(cmd_line, args);
+
+    if (num_of_args > 2) // more than one argument
+        std::cout <<"smash error: cd: too many arguments" << std::endl;
+    else if (num_of_args == 2)
+        new_path = args[1];
+    // else new_path = ""; (in initializer list)
+
+    for (int i = 0; i < num_of_args; i++) free(args[i]);
 }
 void ChangeDirCommand::execute() {
-    // if new_path == "" return
-    // get curr dir with syspath
-    // if new_path == "-" syscall with last_dir
-        // if no last_dir print error "..."
-    // else, syscall with new_path
-    // last_dir = curr dir
+    if (new_path.empty()) return; // no path given
 
-    // if syscall fails use perror to print error
+    // get current directory to save after
+    char* dir = getcwd(nullptr, COMMAND_MAX_CHARS + 1);
+    string updated_old_pwd(dir);
+    free(dir);
+
+    int retVAl = 0;
+    if (new_path == "-") // change to last directory
+    {
+        if (old_pwd->empty()) // if no old_pwd print error
+            std::cout << "smash error: cd: OLDPWD not set" << std::endl;
+        else
+            retVAl = chdir(old_pwd->c_str());
+    }
+    else retVAl = chdir(new_path.c_str()); // change to given path
+
+    if (retVAl == 0) {
+        // if directory was changed successfully
+        // update the last directory in the shell
+        *old_pwd = updated_old_pwd;
+    } else if (retVAl == -1) {
+        // directory change error
+        perror("smash error: chdir failed");
+    }
 }
 
 JobsCommand::JobsCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line) {
@@ -612,7 +638,7 @@ void CopyCommand::execute() {
 //---------------------------END OF BUILT IN--------------------------------
 
 //---------------------------SMALL SHELL--------------------------------------
-SmallShell::SmallShell() : prompt("smash"), last_dir("") {
+SmallShell::SmallShell() : prompt("smash"), old_pwd("") {
     jobs = new JobsList();
     CURR_FORK_CHILD_RUNNING = 0;
 }
@@ -636,9 +662,9 @@ Command* SmallShell::CreateCommand(const char* cmd_line) {
         return new ShowPidCommand(cmd_line);
     } else if (cmd_s.find("pwd") == 0) {
         return new GetCurrDirCommand(cmd_line);
-/*    } else if (cmd_s.find("cd") == 0) {
-        return new ChangeDirCommand(cmd_line, &this->last_dir);
-    } else if (cmd_s.find("jobs") == 0) {
+    } else if (cmd_s.find("cd") == 0) {
+        return new ChangeDirCommand(cmd_line, &this->old_pwd);
+/*    } else if (cmd_s.find("jobs") == 0) {
         return new JobsCommand(cmd_line, &this->jobs);
     } else if (cmd_s.find("kill") == 0) {
         return new KillCommand(cmd_line, &this->jobs);
