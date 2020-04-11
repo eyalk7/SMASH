@@ -23,6 +23,11 @@ using std::map;
 #define COMMAND_MAX_CHARS (80)
 #define MAX_PROCESS_COUNT (100)
 
+#define STDIN 0
+#define STDOUT 1
+#define STDERR 2
+
+
 // declaration of CURR_FORK_CHILD_RUNNING
 extern pid_t CURR_FORK_CHILD_RUNNING;
 
@@ -68,6 +73,8 @@ private:
 
 class PipeCommand : public Command {
     SmallShell* shell;
+    bool has_ampersand, background;
+    const char *command1, *command2;
 public:
     PipeCommand(const char* cmd_line, SmallShell* shell);
     virtual ~PipeCommand() = default;
@@ -227,8 +234,9 @@ class SmallShell {
     return instance;
   }
   void executeCommand(const char* cmd_line);
-  void changePrompt(string prompt);
-  string& getPrompt();
+  void changePrompt(const string& prompt);
+  const string& getPrompt();
+  void addJob(pid_t pid, const char* cmd_line, bool is_stopped = false);
 };
 
 #endif //SMASH_COMMAND_H_
