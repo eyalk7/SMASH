@@ -5,7 +5,7 @@
 #include "Commands.h"
 #include "signals.h"
 
-    pid_t SMASH_PROCESS_PID = 0;
+pid_t SMASH_PROCESS_PID = 0;
 
 int main(int argc, char* argv[]) {
     SMASH_PROCESS_PID = getpid();
@@ -19,8 +19,6 @@ int main(int argc, char* argv[]) {
     //if(sigaction(SIGALRM , ctrlCHandler)==SIG_ERR) {
     //    perror("smash error: failed to set ctrl-C handler");
     //}
-
-
 
     SmallShell& smash = SmallShell::getInstance();
     while(true) {

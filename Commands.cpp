@@ -214,14 +214,14 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
     string command(cmd_line);
     int pipe_index = command.find_first_of("|");
 
-    command1 = command.substr(0, pipe_index);
+    command1 = _trim(command.substr(0, pipe_index));
 
     if (cmd_line[pipe_index + 1] == '&') {
         has_ampersand = true;
         pipe_index++;         // in order for command2 to start after the ampersand
     }
 
-    command2 = command.substr(pipe_index+1, command.length() - pipe_index - 1);
+    command2 = _trim(command.substr(pipe_index+1, command.length() - pipe_index - 1));
     if (checkAndRemoveAmpersand(command2)) background = true;
 
     if (command1.compare("jobs") == 0 || command1.find("jobs ") == 0)
@@ -390,7 +390,7 @@ void ChangePromptCommand::execute() {
 
 void ShowPidCommand::execute() {
     // print shell's pid
-    std::cout << "smash pid is " << getpid() << endl;
+    std::cout << "smash pid is " << SMASH_PROCESS_PID << endl;
 }
 
 void GetCurrDirCommand::execute() {
@@ -688,7 +688,7 @@ CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(
                                                  background(false), jobs(jobs) {
     char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
-    if (num_of_args > 3) {
+    if (num_of_args > 2) {
         old_path = args[1];
         new_path = args[2];
     }
@@ -698,7 +698,7 @@ CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(
 void CopyCommand::execute() {
     if (old_path.empty() || new_path.empty()) return;
 
-    int read_flags = O_RDONLY | O_EXCL;
+    int read_flags = O_RDONLY;
     int fd_read = open(old_path.c_str(), read_flags);
     if (fd_read == -1) perror("smash error: open failed");
 
@@ -726,6 +726,9 @@ void CopyCommand::execute() {
         }
 
         if (read_retVal == -1) perror("smash error: read failed");
+
+        std::cout << "smash: " << std::endl;
+
     } else if (pid < 1) perror("smash error: fork failed");
 
     // both parent and child close the read/write channels

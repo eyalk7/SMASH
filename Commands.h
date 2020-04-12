@@ -28,8 +28,7 @@ using std::map;
 #define STDOUT 1
 #define STDERR 2
 
-
-// declaration of CURR_FORK_CHILD_RUNNING
+// declaration of global variables
 extern pid_t CURR_FORK_CHILD_RUNNING;
 extern pid_t SMASH_PROCESS_PID;
 
