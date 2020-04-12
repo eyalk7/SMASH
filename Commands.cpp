@@ -223,6 +223,9 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
 
     command2 = command.substr(pipe_index+1, command.length() - pipe_index - 1);
     if (checkAndRemoveAmpersand(command2)) background = true;
+
+    if (command1.compare("jobs") == 0 || command1.find("jobs ") == 0)
+        shell->updateJobs();
 }
 void PipeCommand::execute() {
     int my_pipe[2];
@@ -810,4 +813,8 @@ const string& SmallShell::getPrompt() {
 
 void SmallShell::addJob(pid_t pid, const string& str, bool is_stopped) {
     jobs->addJob(pid, str, is_stopped);
+}
+
+void SmallShell::updateJobs() {
+    jobs->removeFinishedJobs();
 }

@@ -242,6 +242,7 @@ class SmallShell {
   void changePrompt(const string& prompt);
   const string& getPrompt();
   void addJob(pid_t pid, const string& str, bool is_stopped = false);
+  void updateJobs();
 };
 
 #endif //SMASH_COMMAND_H_
