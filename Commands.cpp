@@ -212,18 +212,14 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
     string command(cmd_line);
     int pipe_index = command.find_first_of("|");
 
-    // set command1
-    string cmd1 = command.substr(0, pipe_index);
-    command1 = cmd1.c_str();
+    command1 = command.substr(0, pipe_index);
 
     if (cmd_line[pipe_index + 1] == '&') {
         has_ampersand = true;
         pipe_index++;         // in order for command2 to start after the ampersand
     }
 
-    string cmd2 = command.substr(pipe_index+1, command.length() - pipe_index - 1);
-    if (checkAndRemoveAmpersand(cmd2)) background = true;
-    command2 = cmd2.c_str();
+    command2 = command.substr(pipe_index+1, command.length() - pipe_index - 1);
 }
 void PipeCommand::execute() {
     int my_pipe[2];
@@ -240,7 +236,7 @@ void PipeCommand::execute() {
         int write_channel = has_ampersand ? STDERR : STDOUT;
         if (dup2(my_pipe[1], write_channel) == -1) perror("smash error: dup2 failed");
 
-        shell->executeCommand(command1); // execute the command before the pipe
+        shell->executeCommand(command1.c_str()); // execute the command before the pipe
     } else if (pid1 < 1) perror("smash error: fork failed");
     if (pid1 < 1) exit(0); // first child finished
 
@@ -254,7 +250,7 @@ void PipeCommand::execute() {
         // set the new read channel
         if (dup2(my_pipe[0], STDIN) == -1) perror("smash error: dup2 failed");
 
-        shell->executeCommand(command2); // execute the command after the pipe
+        shell->executeCommand(command2.c_str()); // execute the command after the pipe
     } else if (pid2 < 1) perror("smash error: fork failed");
     if (pid2 < 1) exit(0); // second child finished
 
@@ -809,7 +805,6 @@ const string& SmallShell::getPrompt() {
     return prompt;
 }
 
-void SmallShell::addJob(pid_t pid, const char* cmd_line, bool is_stopped) {
-    string cmd(cmd_line);
-    jobs->addJob(pid, cmd, is_stopped);
+void SmallShell::addJob(pid_t pid, const string& str, bool is_stopped) {
+    jobs->addJob(pid, str, is_stopped);
 }

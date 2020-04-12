@@ -75,7 +75,7 @@ private:
 class PipeCommand : public Command {
     SmallShell* shell;
     bool has_ampersand, background;
-    const char *command1, *command2;
+    string command1, command2;
 public:
     PipeCommand(const char* cmd_line, SmallShell* shell);
     virtual ~PipeCommand() = default;
@@ -240,7 +240,7 @@ class SmallShell {
   void executeCommand(const char* cmd_line);
   void changePrompt(const string& prompt);
   const string& getPrompt();
-  void addJob(pid_t pid, const char* cmd_line, bool is_stopped = false);
+  void addJob(pid_t pid, const string& str, bool is_stopped = false);
 };
 
 #endif //SMASH_COMMAND_H_
