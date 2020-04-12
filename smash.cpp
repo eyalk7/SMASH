@@ -5,7 +5,11 @@
 #include "Commands.h"
 #include "signals.h"
 
+    pid_t SMASH_PROCESS_PID = 0;
+
 int main(int argc, char* argv[]) {
+    pid_t SMASH_PROCESS_PID = getpid();
+
     if(signal(SIGTSTP , ctrlZHandler)==SIG_ERR) {
         perror("smash error: failed to set ctrl-Z handler");
     }

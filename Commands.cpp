@@ -150,6 +150,8 @@ void JobsList::killAllJobs() {
     }
 }
 void JobsList::removeFinishedJobs() {
+    if (getppid() == SMASH_PROCESS_PID) return; // i'm child
+
     vector<JobID> to_remove(100,0); // MAX_PROCESS_COUNT ?
     int to_remove_iter= 0;
 

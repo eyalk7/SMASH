@@ -31,6 +31,7 @@ using std::map;
 
 // declaration of CURR_FORK_CHILD_RUNNING
 extern pid_t CURR_FORK_CHILD_RUNNING;
+extern pid_t SMASH_PROCESS_PID;
 
 class SmallShell;
 
