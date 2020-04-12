@@ -22,6 +22,7 @@ using std::map;
 #define COMMAND_MAX_ARGS (20)
 #define COMMAND_MAX_CHARS (80)
 #define MAX_PROCESS_COUNT (100)
+#define COPY_DATA_BUFFER_SIZE (1024);
 
 #define STDIN 0
 #define STDOUT 1
@@ -210,8 +211,10 @@ public:
 // TODO: should it really inherit from BuiltInCommand ?
 class CopyCommand : public BuiltInCommand {
     string old_path, new_path;
+    bool has_ampersand;
+    JobsList* jobs;
 public:
-    explicit CopyCommand(const char* cmd_line);
+    explicit CopyCommand(const char* cmd_line, JobsList* jobs);
     virtual ~CopyCommand() = default;
     void execute() override;
 };

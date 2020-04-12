@@ -241,7 +241,9 @@ void PipeCommand::execute() {
     pid_t pid1 = fork();
     if (pid1 == 0) {    // child process for command1
         setpgrp();              // make sure that the child get different GROUP ID
-        close(my_pipe[0]);  // close read channel
+
+        // close read channel
+        if (close((my_pipe[0]) == -1) perror("smash error: close failed");
 
         //set the new write channel
         int write_channel = has_ampersand ? STDERR : STDOUT;
@@ -254,7 +256,9 @@ void PipeCommand::execute() {
     pid_t pid2 = fork();
     if (pid2 == 0) {    // child process for command2
         setpgrp();              // make sure that the child get different GROUP ID
-        close(my_pipe[1]);  // close write channel
+
+        // close write channel
+        if (close((my_pipe[1]) == -1) perror("smash error: close failed");
 
         // set the new read channel
         if (dup2(my_pipe[0], STDIN) == -1) perror("smash error: dup2 failed");
@@ -263,8 +267,8 @@ void PipeCommand::execute() {
         return;
     } else if (pid2 < 1) { perror("smash error: fork failed"); return; }
 
-    close(my_pipe[0]);
-    close(my_pipe[1]);
+    if (close((my_pipe[0]) == -1) perror("smash error: close failed");
+    if (close((my_pipe[1]) == -1) perror("smash error: close failed");
 
     if (background) {
         shell->addJob(pid1, command1);
@@ -284,11 +288,11 @@ void PipeCommand::execute() {
             // and add it to the jobs list
             if (!WIFEXITED(status)) {
                 if (kill(pid1, SIGTSTP) < 0) perror("smash error: kill failed");
-                shell->addJob(pid1, command1);
+                shell->addJob(pid1, command1, true);
             }
 
             // add command2 to the jobs list
-            shell->addJob(pid2, command2);
+            shell->addJob(pid2, command2, true);
         }
 
         CURR_FORK_CHILD_RUNNING = 0;
@@ -683,7 +687,9 @@ void QuitCommand::execute() {
     exit(0);
 }
 
-CopyCommand::CopyCommand(const char* cmd_line) : BuiltInCommand(cmd_line), old_path(""), new_path("") {
+CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
+                                                 old_path(""), new_path(""),
+                                                 has_ampersand(false), jobs(jobs) {
     char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
     if (num_of_args < 3) std::cout << "smash error: cp: not enough arguments" << std::endl;
@@ -691,22 +697,62 @@ CopyCommand::CopyCommand(const char* cmd_line) : BuiltInCommand(cmd_line), old_p
         old_path = args[1];
         new_path = args[2];
     }
+    if (args[num_of_args-1] == '&') has_ampersand = true;
     for (int i = 0; i < num_of_args; i++) free(args[i]);
 }
 void CopyCommand::execute() {
     if (old_path.empty() || new_path.empty()) return;
 
-    // open the new file place and the prev file
-    // fork
-        // child
-        // setpgrp
-        // loop:
-        // read from prev and write to new file in chuncks
+    int read_flags = O_RDONLY | O_EXCL;
+    int fd_read = open(old_path.c_str(), read_flags);
+    if (fd_read == -1) perror("smash error: open failed");
 
-        // father
-        // if with & add to job list
-        // else CURR_FORK =..., waitpid
-        // CURR_ FORK.. =0
+    int write_flags = O_CREAT | O_TRUNC | O_WRONLY;
+    mode_t mode = S_IWUSR | S_IWGRP | S_IWOTH;
+
+    int fd_write = open(new_path.c_str(), write_flags, mode);
+    if (fd_write == -1) perror("smash error: open failed");
+
+    pid_t pid = fork();
+    if (pid == 0) { // copy data in child process
+        setpgrp();
+
+        int SIZE = COPY_DATA_BUFFER_SIZE;
+
+        char buff[SIZE];
+        int read_retVal = read(fd_read, buff, SIZE);
+        while (read_retVal > 0) {
+            write_retVal = write(fd_write, buff, read_retVal);
+            if (write_retVal == -1) perror("smash error: write failed");
+            if (write_retVal != read_retVal) perror("smash error: incomplete write");
+
+            read_retVal = read(fd_read, buff, SIZE);
+        }
+
+        if (read_retVal == -1) perror("smash error: read failed");
+    }
+
+    // both parent and child close the read/write channels
+    if (close(fd_read) == -1) perror("smash error: close failed");
+    if (close(fd_write) == -1) perror("smash error: close failed");
+
+    if (pid == 0) return;   // child process finished
+
+    // only parent process continues from here
+
+    if (has_ampersand)  // run in background
+        jobs->addJob(pid, cmd_line);
+    else {              // run in foreground
+        int status;
+        CURR_FORK_CHILD_RUNNING = pid;
+        if (waitpid(pid, &status, WUNTRACED) < 0) perror("smash error: waitpid failed");
+
+        if (WIFSTOPPED(status)) {
+            jobs->addJob(pid, cmd_line, true);
+        }
+
+        CURR_FORK_CHILD_RUNNING = 0;
+    }
 }
 //---------------------------END OF BUILT IN--------------------------------
 
@@ -748,7 +794,7 @@ Command* SmallShell::CreateCommand(const char* cmd_line) {
     } else if (cmd_s.find("quit ") == 0) {
         return new QuitCommand(cmd_line, this->jobs);
     } else if (cmd_s.find("cp ") == 0) {
-        return new CopyCommand(cmd_line);
+        return new CopyCommand(cmd_line, this->jobs);
     } else {
         return new ExternalCommand(cmd_line, this->jobs);
     }
