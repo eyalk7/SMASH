@@ -301,11 +301,11 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
 
     // and file address part
     if (to_append) split_place++;
-    pathname = cmd_line[split_place+1];
+    pathname = cmd_line+split_place+1;
 }
 void RedirectionCommand::execute() {
     // open file, if to_append == true open in append mode
-    int flags = O_CREAT;
+    int flags = O_CREAT | O_WRONLY;
     if (to_append) flags |= O_APPEND;
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
     int file_fd = open(pathname.c_str(), flags, mode);
@@ -321,6 +321,7 @@ void RedirectionCommand::execute() {
     // shell.execute the command
     shell->executeCommand(cmd_part.c_str());
 
+    cout << endl;
     // restore stdout and close all new file descriptors
     if (dup2(stdout_fd, STDOUT) < 0) perror("smash error: dup2 failed");
     if (close(stdout_fd) < 0) perror("smash error: close failed");
