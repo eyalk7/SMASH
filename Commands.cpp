@@ -250,8 +250,8 @@ void PipeCommand::execute() {
         if (dup2(my_pipe[1], write_channel) == -1) perror("smash error: dup2 failed");
 
         shell->executeCommand(command1); // execute the command before the pipe
-        return;
-    } else if (pid1 < 1) { perror("smash error: fork failed"); return; }
+    } else if (pid1 < 1) perror("smash error: fork failed");
+    if (pid1 < 1) exit(0); // first child finished
 
     pid_t pid2 = fork();
     if (pid2 == 0) {    // child process for command2
@@ -264,8 +264,8 @@ void PipeCommand::execute() {
         if (dup2(my_pipe[0], STDIN) == -1) perror("smash error: dup2 failed");
 
         shell->executeCommand(command2); // execute the command after the pipe
-        return;
-    } else if (pid2 < 1) { perror("smash error: fork failed"); return; }
+    } else if (pid2 < 1) perror("smash error: fork failed");
+    if (pid2 < 1) exit(0); // second child finished
 
     if (close(my_pipe[0]) == -1) perror("smash error: close failed");
     if (close(my_pipe[1]) == -1) perror("smash error: close failed");
@@ -279,16 +279,16 @@ void PipeCommand::execute() {
         CURR_FORK_CHILD_RUNNING = pid2;
         if (waitpid(pid2, &status, WUNTRACED) < 0) {  // wait for the second command to finish
             perror("smash error: waitpid failed");
-        } else if (WIFSTOPPED(status)) {
+        } else if (WIFSTOPPED(status)) { // if SIGSTOP was called
             // if SIGSTOP was called
             // check if command1 finished
-            if (waitpid(pid1, &status, WNOHANG) < 0) perror("smash error: waitpid failed");
-
-            // if command1 didn't finish, send SIGSTOP
-            // and add it to the jobs list
-            if (!WIFEXITED(status)) {
+            if (waitpid(pid1, &status, WNOHANG) < 0) {
+                perror("smash error: waitpid failed");
+            } else if (!WIFEXITED(status)) {
+                // if command1 didn't finish, stop it
+                // and add it to the jobs list
                 if (kill(pid1, SIGTSTP) < 0) perror("smash error: kill failed");
-                shell->addJob(pid1, command1, true);
+                else shell->addJob(pid1, command1, true);
             }
 
             // add command2 to the jobs list
@@ -353,6 +353,7 @@ void ExternalCommand::execute() {
         if (execl("/bin/bash", "/bin/bash", cmd_to_son.c_str(), (char*) nullptr) < 0) {
             perror("smash error: execl failed");
         }
+        exit(0);    // child finished (if execl failed)
     }
     else if (pid > 0) { //parent
         // if with "&" add to JOBS LIST and return
@@ -736,18 +737,20 @@ void CopyCommand::execute() {
     if (close(fd_read) == -1) perror("smash error: close failed");
     if (close(fd_write) == -1) perror("smash error: close failed");
 
-    if (pid < 1) return;   // child process finished
+    if (pid < 1) exit(0);   // child process finished
 
     // only parent process continues from here
 
-    if (background)  // run in background
+    if (background)     // run in background
         jobs->addJob(pid, cmd_line);
     else {              // run in foreground
         int status;
         CURR_FORK_CHILD_RUNNING = pid;
-        if (waitpid(pid, &status, WUNTRACED) < 0) perror("smash error: waitpid failed");
-
-        if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_line, true);
+        if (waitpid(pid, &status, WUNTRACED) < 0) {
+            perror("smash error: waitpid failed");
+        } else if (WIFSTOPPED(status)) {
+            jobs->addJob(pid, cmd_line, true);
+        }
 
         CURR_FORK_CHILD_RUNNING = 0;
     }
