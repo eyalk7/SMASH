@@ -80,6 +80,7 @@ void _removeBackgroundSign(char* cmd_line) {
 }
 
 bool checkAndRemoveAmpersand(string& str) {
+    if (str.empty()) return false;
     // find last character other than spaces
     unsigned int idx = str.find_last_not_of(WHITESPACE);
 
@@ -302,6 +303,7 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
     // and file address part
     if (to_append) split_place++;
     pathname = cmd_line+split_place+1;
+    pathname = _ltrim(pathname);
 }
 void RedirectionCommand::execute() {
     // open file, if to_append == true open in append mode
@@ -321,7 +323,6 @@ void RedirectionCommand::execute() {
     // shell.execute the command
     shell->executeCommand(cmd_part.c_str());
 
-    cout << endl;
     // restore stdout and close all new file descriptors
     if (dup2(stdout_fd, STDOUT) < 0) perror("smash error: dup2 failed");
     if (close(stdout_fd) < 0) perror("smash error: close failed");
@@ -569,7 +570,7 @@ void ForegroundCommand::execute() {
     if (waitpid(pid, &status, WUNTRACED) < 0) {
         perror("smash error: waitpid failed");
     } else {
-        if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_line);
+        if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_str, true);
     }
     CURR_FORK_CHILD_RUNNING = 0;
 }
