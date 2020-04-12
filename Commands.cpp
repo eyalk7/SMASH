@@ -8,7 +8,7 @@
 
 using namespace std;
 
-// definition of CURR_FORK_CHILD_RUNNING
+// definition of CURR_FORK_CHILD_RUNNING`
 pid_t CURR_FORK_CHILD_RUNNING = 0;
 
 const std::string WHITESPACE = " \n\r\t\f\v";
@@ -222,6 +222,7 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
     }
 
     command2 = command.substr(pipe_index+1, command.length() - pipe_index - 1);
+    if (checkAndRemoveAmpersand(command2)) background = true;
 }
 void PipeCommand::execute() {
     int my_pipe[2];
