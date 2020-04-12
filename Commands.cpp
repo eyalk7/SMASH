@@ -708,7 +708,7 @@ void CopyCommand::execute() {
     if (fd_read == -1) perror("smash error: open failed");
 
     int write_flags = O_CREAT | O_TRUNC | O_WRONLY;
-    mode_t mode = S_IWUSR | S_IWGRP | S_IWOTH;
+    mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 
     int fd_write = open(new_path.c_str(), write_flags, mode);
     if (fd_write == -1) perror("smash error: open failed");
