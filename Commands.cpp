@@ -220,18 +220,8 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
         pipe_index++;         // in order for command2 to start after the ampersand
     }
 
-    // check if & at the end
-    char* args[COMMAND_MAX_ARGS+1];
-    int num_of_args = _parseCommandLine(cmd_line, args);
-    if (*args[num_of_args - 1] == '&') background = true;
-    for (int i = 0; i < num_of_args; i++) free(args[i]);
-
-    // set command2
     string cmd2 = command.substr(pipe_index+1, command.length() - pipe_index - 1);
-    if (background) {
-        cmd2 =_trim(cmd2);
-        cmd2.pop_back(); // remove ampersand
-    }
+    if (checkAndRemoveAmpersand(cmd2)) background = true;
     command2 = cmd2.c_str();
 }
 void PipeCommand::execute() {
@@ -350,7 +340,9 @@ void ExternalCommand::execute() {
         setpgrp(); // no possible errors
 
         // exec to bash with cmd_line
-        if (execl("/bin/bash", "/bin/bash", cmd_to_son.c_str(), (char*) nullptr) < 0) {
+        string arg1 = "-c";
+        cmd_to_son = "\"" + cmd_to_son + "\"";
+        if (execl("/bin/bash", "bash", arg1.c_str(), cmd_to_son.c_str(), (char*) nullptr) < 0) {
             perror("smash error: execl failed");
         }
         exit(0);    // child finished (if execl failed)
