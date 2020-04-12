@@ -341,7 +341,7 @@ void ExternalCommand::execute() {
 
         // exec to bash with cmd_line
         string arg1 = "-c";
-        cmd_to_son = "\"" + cmd_to_son + "\"";
+        //cmd_to_son = "\"" + cmd_to_son + "\"";
         if (execl("/bin/bash", "bash", arg1.c_str(), cmd_to_son.c_str(), (char*) nullptr) < 0) {
             perror("smash error: execl failed");
         }
