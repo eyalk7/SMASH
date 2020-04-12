@@ -223,7 +223,7 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
     // check if & at the end
     char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
-    if (args[num_of_args - 1] == '&' ) background = true;
+    if (*args[num_of_args - 1] == '&') background = true;
     for (int i = 0; i < num_of_args; i++) free(args[i]);
 
     // set command2
@@ -243,7 +243,7 @@ void PipeCommand::execute() {
         setpgrp();              // make sure that the child get different GROUP ID
 
         // close read channel
-        if (close((my_pipe[0]) == -1) perror("smash error: close failed");
+        if (close(my_pipe[0]) == -1) perror("smash error: close failed");
 
         //set the new write channel
         int write_channel = has_ampersand ? STDERR : STDOUT;
@@ -251,14 +251,14 @@ void PipeCommand::execute() {
 
         shell->executeCommand(command1); // execute the command before the pipe
         return;
-    } else if (pid1 < 1) { perror("smash error: fork failed"); return }
+    } else if (pid1 < 1) { perror("smash error: fork failed"); return; }
 
     pid_t pid2 = fork();
     if (pid2 == 0) {    // child process for command2
         setpgrp();              // make sure that the child get different GROUP ID
 
         // close write channel
-        if (close((my_pipe[1]) == -1) perror("smash error: close failed");
+        if (close(my_pipe[1]) == -1) perror("smash error: close failed");
 
         // set the new read channel
         if (dup2(my_pipe[0], STDIN) == -1) perror("smash error: dup2 failed");
@@ -267,8 +267,8 @@ void PipeCommand::execute() {
         return;
     } else if (pid2 < 1) { perror("smash error: fork failed"); return; }
 
-    if (close((my_pipe[0]) == -1) perror("smash error: close failed");
-    if (close((my_pipe[1]) == -1) perror("smash error: close failed");
+    if (close(my_pipe[0]) == -1) perror("smash error: close failed");
+    if (close(my_pipe[1]) == -1) perror("smash error: close failed");
 
     if (background) {
         shell->addJob(pid1, command1);
@@ -689,15 +689,14 @@ void QuitCommand::execute() {
 
 CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
                                                  old_path(""), new_path(""),
-                                                 has_ampersand(false), jobs(jobs) {
+                                                 background(false), jobs(jobs) {
     char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
-    if (num_of_args < 3) std::cout << "smash error: cp: not enough arguments" << std::endl;
-    else {
+    if (num_of_args > 3) {
         old_path = args[1];
         new_path = args[2];
     }
-    if (args[num_of_args-1] == '&') has_ampersand = true;
+    if (*args[num_of_args-1] == '&') background = true;
     for (int i = 0; i < num_of_args; i++) free(args[i]);
 }
 void CopyCommand::execute() {
@@ -721,6 +720,7 @@ void CopyCommand::execute() {
 
         char buff[SIZE];
         int read_retVal = read(fd_read, buff, SIZE);
+        int write_retVal;
         while (read_retVal > 0) {
             write_retVal = write(fd_write, buff, read_retVal);
             if (write_retVal == -1) perror("smash error: write failed");
@@ -730,17 +730,17 @@ void CopyCommand::execute() {
         }
 
         if (read_retVal == -1) perror("smash error: read failed");
-    }
+    } else if (pid < 1) perror("smash error: fork failed");
 
     // both parent and child close the read/write channels
     if (close(fd_read) == -1) perror("smash error: close failed");
     if (close(fd_write) == -1) perror("smash error: close failed");
 
-    if (pid == 0) return;   // child process finished
+    if (pid < 1) return;   // child process finished
 
     // only parent process continues from here
 
-    if (has_ampersand)  // run in background
+    if (background)  // run in background
         jobs->addJob(pid, cmd_line);
     else {              // run in foreground
         int status;
@@ -768,30 +768,30 @@ SmallShell::~SmallShell() {
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 Command* SmallShell::CreateCommand(const char* cmd_line) {
-    string cmd_s = _trim(string(cmd_line));
-    if (cmd_s.find("|") >= 0) {
+    string cmd_s = _ltrim(string(cmd_line));
+    if (cmd_s.find("|") != string::npos) {
         return new PipeCommand(cmd_line, this);
-    } else if (cmd_s.find(">") >= 0) {
+    } else if (cmd_s.find(">") != string::npos) {
         return new RedirectionCommand(cmd_line, this);
-    } else if (cmd_s.find("chprompt ") == 0) {
+    } else if (cmd_s.compare("chprompt") == 0 || cmd_s.find("chprompt ") == 0) {
         return new ChangePromptCommand(cmd_line, this);
-    } else if (cmd_s.find("showpid ") == 0) {
+    } else if (cmd_s.compare("showpid") == 0 || cmd_s.find("showpid ") == 0) {
         return new ShowPidCommand(cmd_line);
-    } else if (cmd_s.find("pwd ") == 0) {
+    } else if (cmd_s.compare("pwd") == 0 || cmd_s.find("pwd ") == 0) {
         return new GetCurrDirCommand(cmd_line);
-    } else if (cmd_s.find("cd ") == 0) {
+    } else if (cmd_s.compare("cd") == 0 || cmd_s.find("cd ") == 0) {
         return new ChangeDirCommand(cmd_line, &this->old_pwd);
-    } else if (cmd_s.find("jobs ") == 0) {
+    } else if (cmd_s.compare("jobs") == 0 || cmd_s.find("jobs ") == 0) {
         return new JobsCommand(cmd_line, this->jobs);
-    } else if (cmd_s.find("kill ") == 0) {
+    } else if (cmd_s.compare("kill") == 0 || cmd_s.find("kill ") == 0) {
         return new KillCommand(cmd_line, this->jobs);
-    } else if (cmd_s.find("fg ") == 0) {
+    } else if (cmd_s.compare("fg") == 0 || cmd_s.find("fg ") == 0) {
         return new ForegroundCommand(cmd_line, this->jobs);
-    } else if (cmd_s.find("bg ") == 0) {
+    } else if (cmd_s.compare("bg") == 0 || cmd_s.find("bg ") == 0) {
         return new BackgroundCommand(cmd_line, this->jobs);
-    } else if (cmd_s.find("quit ") == 0) {
+    } else if (cmd_s.compare("quit") == 0 || cmd_s.find("quit ") == 0) {
         return new QuitCommand(cmd_line, this->jobs);
-    } else if (cmd_s.find("cp ") == 0) {
+    } else if (cmd_s.compare("cp") == 0 || cmd_s.find("cp ") == 0) {
         return new CopyCommand(cmd_line, this->jobs);
     } else {
         return new ExternalCommand(cmd_line, this->jobs);
