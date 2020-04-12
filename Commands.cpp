@@ -707,7 +707,7 @@ void CopyCommand::execute() {
     int fd_read = open(old_path.c_str(), read_flags);
     if (fd_read == -1) perror("smash error: open failed");
 
-    int write_flags = O_CREAT | O_TRUNC | O_WRONLY;
+    int write_flags = O_WRONLY | O_CREAT | O_TRUNC;
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 
     int fd_write = open(new_path.c_str(), write_flags, mode);
@@ -747,9 +747,7 @@ void CopyCommand::execute() {
         CURR_FORK_CHILD_RUNNING = pid;
         if (waitpid(pid, &status, WUNTRACED) < 0) perror("smash error: waitpid failed");
 
-        if (WIFSTOPPED(status)) {
-            jobs->addJob(pid, cmd_line, true);
-        }
+        if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_line, true);
 
         CURR_FORK_CHILD_RUNNING = 0;
     }
