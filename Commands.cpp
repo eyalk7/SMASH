@@ -694,6 +694,7 @@ void CopyCommand::execute() {
     pid_t pid = fork();
     if (pid == 0) { // copy data in child process
         setpgrp();
+        signal(SIGTSTP, SIG_DFL);
 
         int SIZE = COPY_DATA_BUFFER_SIZE;
 
