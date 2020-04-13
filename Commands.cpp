@@ -258,7 +258,7 @@ void PipeCommand::execute() {
             } else if (!WIFEXITED(status)) {
                 // if command1 didn't finish, stop it
                 // and add it to the jobs list
-                if (kill(pid1, SIGTSTP) < 0) perror("smash error: kill failed");
+                if (kill(pid1, SIGSTOP) < 0) perror("smash error: kill failed");
                 else shell->addJob(pid1, command1, true);
             }
 
