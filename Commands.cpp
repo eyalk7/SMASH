@@ -700,13 +700,17 @@ void CopyCommand::execute() {
 
     int read_flags = O_RDONLY;
     int fd_read = open(old_path.c_str(), read_flags);
-    if (fd_read == -1) perror("smash error: open failed");
+    if (fd_read == -1) { perror("smash error: open failed"); return; }
 
     int write_flags = O_WRONLY | O_CREAT | O_TRUNC;
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 
     int fd_write = open(new_path.c_str(), write_flags, mode);
-    if (fd_write == -1) perror("smash error: open failed");
+    if (fd_write == -1)  {
+        perror("smash error: open failed");
+        if (close(fd_read) == -1) perror("smash error: close failed");
+        return;
+    }
 
     pid_t pid = fork();
     if (pid == 0) { // copy data in child process
@@ -726,8 +730,6 @@ void CopyCommand::execute() {
         }
 
         if (read_retVal == -1) perror("smash error: read failed");
-
-        std::cout << "smash: " << std::endl;
 
     } else if (pid < 1) perror("smash error: fork failed");
 
