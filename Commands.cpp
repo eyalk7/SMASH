@@ -306,6 +306,7 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
     if (to_append) split_place++;
     pathname = cmd_line+split_place+1;
     pathname = _ltrim(pathname);
+    if (checkAndRemoveAmpersand(pathname)) cmd_part += "&";
 }
 void RedirectionCommand::execute() {
     // open file, if to_append == true open in append mode
