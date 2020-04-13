@@ -670,6 +670,7 @@ CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(
     if (num_of_args > 2) {
         old_path = args[1];
         new_path = args[2];
+        if (checkAndRemoveAmpersand(new_path)) background = true;
     }
     if (*args[num_of_args-1] == '&') background = true;
     for (int i = 0; i < num_of_args; i++) free(args[i]);
