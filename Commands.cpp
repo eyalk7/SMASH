@@ -57,47 +57,25 @@ int _parseCommandLine(const char* cmd_line, char** args) {
 
   FUNC_EXIT()
 }
-bool _isBackgroundCommand(const char* cmd_line) {
-  const string str(cmd_line);
-  return str[str.find_last_not_of(WHITESPACE)] == '&';
-}
-void _removeBackgroundSign(char* cmd_line) {
-  const string str(cmd_line);
-  // find last character other than spaces
-  unsigned int idx = str.find_last_not_of(WHITESPACE);
-  // if all characters are spaces then return
-  if (idx == string::npos) {
-    return;
-  }
-  // if the command line does not end with & then return
-  if (cmd_line[idx] != '&') {
-    return;
-  }
-  // replace the & (background sign) with space and then remove all tailing spaces.
-  cmd_line[idx] = ' ';
-  // truncate the command line string up to the last non-space character
-  cmd_line[str.find_last_not_of(WHITESPACE, idx) + 1] = 0;
-}
 
 bool checkAndRemoveAmpersand(string& str) {
     if (str.empty()) return false;
-    // find last character other than spaces
-    unsigned int idx = str.find_last_not_of(WHITESPACE);
 
-    // if all characters are spaces then return
-    if (idx == string::npos) {
-        return false;
-    }
-
-    // if the command line does not end with & then return
-    if (str[idx] != '&') {
-        return false;
+    bool has_ampersand = false;
+    int to_delete = str.size()-1;
+    while (to_delete >= 0 && (str[to_delete] == ' ' || str[to_delete] == '&') ) {
+        if (str[to_delete] == '&') has_ampersand = true;
+        to_delete--;
     }
 
     // erase
-    str.erase(idx);
+    if (to_delete < 0) { // all spaces and ampersands
+        str = "";
+    } else {
+        str.erase(str.begin()+to_delete+1, str.end());
+    }
 
-    return true;
+    return has_ampersand;
 }
 
 //---------------------------JOBS LISTS------------------------------
