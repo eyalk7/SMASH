@@ -211,7 +211,7 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
 }
 void PipeCommand::execute() {
     int my_pipe[2];
-    if (pipe(my_pipe) == -1) { // todo: added this
+    if (pipe(my_pipe) == -1) {
         perror("smash error: pipe failed");
         return;
     }
@@ -221,18 +221,25 @@ void PipeCommand::execute() {
         setpgrp();              // make sure that the child get different GROUP ID
 
         // close read channel
-        if (close(my_pipe[0]) == -1) perror("smash error: close failed"); // todo: here it's ok to continue even if failed
+        if (close(my_pipe[0]) == -1) perror("smash error: close failed");
 
         //set the new write channel
         int write_channel = has_ampersand ? STDERR : STDOUT;
-        if (dup2(my_pipe[1], write_channel) == -1) { // todo: added this
+        if (dup2(my_pipe[1], write_channel) == -1) {
             perror("smash error: dup2 failed");
-            return;
+            exit(0);
         }
 
         shell->executeCommand(command1.c_str()); // execute the command before the pipe
-    } else if (pid1 < 1) perror("smash error: fork failed"); // todo: why not if pid < 0? also need to add return if fail (but need to close pipe first)
-    if (pid1 < 1) exit(0); // first child finished    // todo: if fork failed parent also do exit
+        exit(0);
+
+    } else if (pid1 < 0)  {
+        perror("smash error: fork failed");
+        // close parent's pipe
+        if (close(my_pipe[0]) == -1) perror("smash error: close failed");
+        if (close(my_pipe[1]) == -1) perror("smash error: close failed");
+        return;
+    }
 
     pid_t pid2 = fork();
     if (pid2 == 0) {    // child process for command2
@@ -245,8 +252,15 @@ void PipeCommand::execute() {
         if (dup2(my_pipe[0], STDIN) == -1) perror("smash error: dup2 failed"); // todo: return if fail
 
         shell->executeCommand(command2.c_str()); // execute the command after the pipe
-    } else if (pid2 < 1) perror("smash error: fork failed");    //todo: same
-    if (pid2 < 1) exit(0); // second child finished      // todo: same
+        exit(0);
+
+    }  else if (pid2 < 0) {
+        perror("smash error: fork failed");
+        // close parent's pipe
+        if (close(my_pipe[0]) == -1) perror("smash error: close failed");
+        if (close(my_pipe[1]) == -1) perror("smash error: close failed");
+        return;
+    }
 
     // close parent's pipe
     if (close(my_pipe[0]) == -1) perror("smash error: close failed");
@@ -480,24 +494,24 @@ ChangeDirCommand::ChangeDirCommand(const char* cmd_line, string* last_dir) : Bui
         std::cout << "smash error: cd: too many arguments" << std::endl;
     } else if (num_of_args == 2) {
         new_path = args[1];
-        // else new_path = ""; (in initializer list)
-        // todo: cd can be without arguments. see https://piazza.com/class/k7s8mucctm92mq?cid=62
-        // todo: also need to save curr directory in old_pwd if cd was called without arguments
-    }
+    } // else new_path = "";  // command is "cd" without arguments
 
     for (int i = 0; i < num_of_args; i++) free(args[i]);
 }
 void ChangeDirCommand::execute() {
-    if (new_path.empty()) return; // no path given
-
     // get current directory to save after
     char* dir = getcwd(nullptr, COMMAND_MAX_CHARS + 1);
     if (!dir) {
         perror("smash error: getcwd failed");
-        // todo: return? or continue without saving the previous directory (both have disadvantages)
+        return;
     }
     string updated_old_pwd(dir);
     free(dir);
+
+    if (new_path.empty()) { // no path given (no arguments)
+        *old_pwd = updated_old_pwd;
+        return;
+    }
 
     int retVAl = 0;
     if (new_path == "-") // change to last directory
@@ -839,9 +853,11 @@ void CopyCommand::execute() {
     if (close(fd_read) == -1) perror("smash error: close failed");
     if (close(fd_write) == -1) perror("smash error: close failed");
 
-    if (pid < 1) exit(0);   // child process finished // todo: if fork failed parent also do exit
+    if (pid == 0) exit(0);  // child process finished
 
     // only parent process continues from here
+
+    if (pid < 1) return;    // fork failed, parent process returns
 
     if (background)     // run in background
         jobs->addJob(pid, original_cmd);
