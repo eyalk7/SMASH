@@ -272,6 +272,13 @@ void PipeCommand::execute() {
         shell->addJob(pid1, command1);
         shell->addJob(pid2, command2);
     } else {
+
+        if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
+            waitpid(pid2, nullptr, 0);
+            waitpid(pid1, nullptr, 0);
+            return;
+        }
+
         int status;
 
         // wait for the second command to finish
@@ -367,6 +374,12 @@ void RedirectionCommand::execute() {
         if (to_background) {
             shell->addJob(pid, original_cmd);
         } else {
+
+            if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
+                waitpid(pid, nullptr, 0);
+                return;
+            }
+
             // wait for job
             // add to jobs list if stopped
             CURR_FORK_CHILD_RUNNING = pid;
