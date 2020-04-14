@@ -116,6 +116,8 @@ void JobsList::printJobsList() {
     }
 }
 void JobsList::killAllJobs() {
+    removeFinishedJobs();
+
     cout << "smash: sending SIGKILL signal to " << jobs.size() << " jobs:" << endl;
 
     // interate on map, print message and send SIGKILL than wait them
@@ -290,7 +292,8 @@ void PipeCommand::execute() {
 
 RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
                                                                                     shell(shell),
-                                                                                    to_append(false) {
+                                                                                    to_append(false),
+                                                                                    to_background(false) {
     // find split place
     int split_place = original_cmd.find_first_of(">");;
 
@@ -305,9 +308,11 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
     pathname = _trim(original_cmd.substr(split_place+1));
 
     // move ampersand from pathname to cmd_part if there is one
-    if (checkAndRemoveAmpersand(pathname)) cmd_part += "&";
+    if (checkAndRemoveAmpersand(pathname)) to_background = true;
 }
 void RedirectionCommand::execute() {
+
+    /*
     // open file, if to_append is true open in append mode
     int flags = O_CREAT | O_WRONLY;
     if (to_append) flags |= O_APPEND;
@@ -335,13 +340,56 @@ void RedirectionCommand::execute() {
     }
 
     // shell.execute the command
-    shell->executeCommand(cmd_part.c_str());
-    // todo: maybe we need to print the original cmd_line (in jobs list). waiting for answer in piazza
 
+    */
+
+    pid_t pid = fork();
+
+    if (pid == 0) { // child
+        if (close(STDOUT) < 0) {
+            perror("smash error: open failed");
+            exit(0);
+        }
+
+        // open file, if to_append is true open in append mode
+        int flags = O_CREAT | O_WRONLY;
+        if (to_append) flags |= O_APPEND;
+        mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
+        int file_fd = open(pathname.c_str(), flags, mode);
+        if (file_fd < 0) { // can't continue
+            perror("smash error: open failed");
+            exit(0);
+        }
+
+        shell->executeCommand(cmd_part.c_str());
+        exit(0);
+
+    } else if (pid > 0) { // parent
+        // if with "&" add to JOBS LIST and return
+        if (to_background) {
+            shell->addJob(pid, original_cmd);
+        } else {
+            // wait for job
+            // add to jobs list if stopped
+            CURR_FORK_CHILD_RUNNING = pid;
+            int status;
+            if (waitpid(pid, &status, WUNTRACED) < 0) {
+                perror("smash error: waitpid failed");
+            } else {
+                if (WIFSTOPPED(status)) shell->addJob(pid, original_cmd, true);
+            }
+            CURR_FORK_CHILD_RUNNING = 0;
+        }
+    } else {
+        perror("smash error: fork failed");
+    }
+
+    /*
     // restore stdout and close all new file descriptors
     if (dup2(stdout_fd, STDOUT) < 0) perror("smash error: dup2 failed");
     if (close(stdout_fd) < 0) perror("smash error: close failed");
     if (close(file_fd) < 0) perror("smash error: close failed");
+     */
 }
 
 //---------------------------EXTERNAL CLASS------------------------------
@@ -355,7 +403,7 @@ void ExternalCommand::execute() {
     pid_t pid = fork();
 
     if (pid == 0) { //child:
-        setpgrp(); // no possible errors
+        if (getppid() == SMASH_PROCESS_PID) setpgrp(); // no possible errors
 
         // exec to bash with cmd_line
         string arg1 = "-c";
@@ -500,6 +548,12 @@ KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) :    BuiltInComma
 void KillCommand::execute() {
     if (job_id == 0 || signum == 0) return;
     auto job_entry = jobs->getJobById(job_id);
+
+    pid_t gpid = getpgid(job_entry->pid);
+    if (gpid < 0) {
+        perror("smash error: getgpid failed");
+        return;
+    }
 
     // send signal, print message
     if (kill(job_entry->pid, signum) < 0) { // can't continue

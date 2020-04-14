@@ -97,6 +97,7 @@ class RedirectionCommand : public Command {
     string cmd_part;
     string pathname;
     bool to_append;
+    bool to_background;
 public:
     RedirectionCommand(const char* cmd_line, SmallShell* shell);
     virtual ~RedirectionCommand() = default;
