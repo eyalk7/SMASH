@@ -218,8 +218,8 @@ void PipeCommand::execute() {
         setpgrp();      // make sure that the child gets a different GROUP ID
 
         pid_t pid1, pid2;
-        bool success = PipeCommand::Pipe(&pid1, &pid2);
-        if (!sucess) {
+        bool success = Pipe(&pid1, &pid2);
+        if (!success) {
             // kill this process and it's children
             pid_t gpid = getpgid(CURR_FORK_CHILD_RUNNING);
             if (gpid < 0) {
