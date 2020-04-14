@@ -76,6 +76,14 @@ bool checkAndRemoveAmpersand(string& str) {
     return has_ampersand;
 }
 
+bool isChild(pid_t pid) {
+    if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
+        if (waitpid(pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
+        return true;
+    }
+    return false;
+}
+
 //---------------------------JOBS LISTS------------------------------
 JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped) :  pid(pid),
                                                                          cmd_str(cmd_str),
@@ -256,10 +264,7 @@ void PipeCommand::execute() {
     if (background) {
         shell->addJob(pid, original_cmd);
     } else {
-        if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
-            if (waitpid(pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
-            return;
-        }
+        if (isChild(pid)) return;
 
         // wait for child to finish
         // add to jobs list if stopped
@@ -373,11 +378,7 @@ void RedirectionCommand::execute() {
         if (to_background) {
             shell->addJob(pid, original_cmd);
         } else {
-
-            if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
-                waitpid(pid, nullptr, 0);
-                return;
-            }
+            if (isChild(pid)) return;
 
             // wait for job
             // add to jobs list if stopped
@@ -420,11 +421,7 @@ void ExternalCommand::execute() {
         if (to_background) {
             jobs->addJob(pid, original_cmd);
         } else {
-
-            if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
-                if (waitpid(pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
-                return;
-            }
+            if (isChild(pid)) return;
 
             // wait for job
             // add to jobs list if stopped
@@ -672,10 +669,7 @@ void ForegroundCommand::execute() {
         return;
     }
 
-    if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
-        waitpid(pid, nullptr, 0);
-        return;
-    }
+    if (isChild(pid)) return;
 
     // wait for job
     // nullify start time if stopped again
@@ -882,11 +876,7 @@ void CopyCommand::execute() {
     if (background)     // run in background
         jobs->addJob(pid, original_cmd);
     else {              // run in foreground
-
-        if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
-            waitpid(pid, nullptr, 0);
-            return;
-        }
+        if (isChild(pid)) return;
 
         int status;
         CURR_FORK_CHILD_RUNNING = pid;
