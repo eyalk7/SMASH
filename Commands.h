@@ -91,7 +91,7 @@ public:
     virtual ~PipeCommand() = default;
     void execute() override;
 private:
-    bool Pipe(pid_t* pid1, pid_t* pid2);
+    bool Pipe(int my_pipe[], pid_t* pid1, pid_t* pid2);
 };
 
 class RedirectionCommand : public Command {

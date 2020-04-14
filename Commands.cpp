@@ -215,10 +215,21 @@ void PipeCommand::execute() {
     pid_t pid = fork();
 
     if (pid == 0) { // child process
-        setpgrp();      // make sure that the child gets a different GROUP ID
+        if (getppid() == SMASH_PROCESS_PID) setpgrp();      // make sure that the child gets a different GROUP ID
+
+        int my_pipe[2];
+        if (pipe(my_pipe) == -1) {
+            perror("smash error: pipe failed");
+            exit(0);
+        }
 
         pid_t pid1, pid2;
-        bool success = Pipe(&pid1, &pid2);
+        bool success = Pipe(my_pipe, &pid1, &pid2);
+
+        // close pipe
+        if (close(my_pipe[0]) == -1) perror("smash error: close failed");
+        if (close(my_pipe[1]) == -1) perror("smash error: close failed");
+
         if (!success) {
             // kill this process and it's children
             pid_t gpid = getpgid(CURR_FORK_CHILD_RUNNING);
@@ -263,13 +274,7 @@ void PipeCommand::execute() {
     }
 }
 
-bool PipeCommand::Pipe(pid_t* pid1, pid_t* pid2) {
-    int my_pipe[2];
-    if (pipe(my_pipe) == -1) {
-        perror("smash error: pipe failed");
-        exit(0);
-    }
-
+bool PipeCommand::Pipe(int my_pipe[], pid_t* pid1, pid_t* pid2) {
     *pid1 = fork();
     if (*pid1 == 0) {    // child process for command1
         // close read channel
@@ -311,9 +316,6 @@ bool PipeCommand::Pipe(pid_t* pid1, pid_t* pid2) {
         return false;
     }
 
-    // close pipe
-    if (close(my_pipe[0]) == -1) perror("smash error: close failed");
-    if (close(my_pipe[1]) == -1) perror("smash error: close failed");
     return true;
 }
 
