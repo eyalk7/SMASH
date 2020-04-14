@@ -100,6 +100,7 @@ class RedirectionCommand : public Command {
     string pathname;
     bool to_append;
     bool to_background;
+    bool cmd_is_fg;
 public:
     RedirectionCommand(const char* cmd_line, SmallShell* shell);
     virtual ~RedirectionCommand() = default;

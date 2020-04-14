@@ -213,10 +213,17 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
     if (checkAndRemoveAmpersand(command2)) background = true;
 
     // if the first command is jobs, update jobs because child can't
-    if (command1.compare("jobs") == 0 || command1.find("jobs ") == 0)
+    if (command1.compare("jobs") == 0 || command1.find("jobs ") == 0) {
         shell->updateJobs();
+    }
 }
 void PipeCommand::execute() {
+    // if first command fg, just call fg
+    if (command1.find("fg ")) {
+        shell->executeCommand(command1.c_str());
+        return;
+    }
+
     pid_t pid = fork();
 
     if (pid == 0) { // child process
@@ -325,7 +332,8 @@ bool PipeCommand::Pipe(int my_pipe[], pid_t* pid1, pid_t* pid2) {
 RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
                                                                                     shell(shell),
                                                                                     to_append(false),
-                                                                                    to_background(false) {
+                                                                                    to_background(false),
+                                                                                    cmd_is_fg(false) {
     // find split place
     int split_place = original_cmd.find_first_of(">");;
 
@@ -341,22 +349,48 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
 
     // move ampersand from pathname to cmd_part if there is one
     if (checkAndRemoveAmpersand(pathname)) to_background = true;
+
+    // check if cmd is fg
+    if (cmd_part.find("fg ")) cmd_is_fg = true;
 }
 void RedirectionCommand::execute() {
+
+    // open file, if to_append is true open in append mode
+    int flags = O_CREAT | O_WRONLY;
+    if (to_append) flags |= O_APPEND;
+    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
+    int file_fd = open(pathname.c_str(), flags, mode);
+    if (file_fd < 0) { // can't continue
+        perror("smash error: open failed");
+        return;
+    }
+
+    if (cmd_is_fg) {
+        auto stdout_fd = dup(STDOUT);
+        if (stdout_fd < 0) { // can't continue
+            perror("smash error: dup failed");
+            if (close(file_fd) < 0) perror("smash error: close failed");
+            return;
+        }
+        if (dup2(file_fd, STDOUT) < 0) {
+            perror("smash error: dup2 failed");
+            if (close(stdout_fd) < 0) perror("smash error: close failed");
+            if (close(file_fd) < 0) perror("smash error: close failed");
+            return;
+        }
+
+        shell->executeCommand(cmd_part.c_str());
+
+        if (dup2(stdout_fd, STDOUT) < 0) perror("smash error: dup2 failed");
+        if (close(stdout_fd) < 0) perror("smash error: close failed");
+        if (close(file_fd) < 0) perror("smash error: close failed");
+        return;
+    }
+
     pid_t pid = fork();
 
     if (pid == 0) { // child
         if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
-
-        // open file, if to_append is true open in append mode
-        int flags = O_CREAT | O_WRONLY;
-        if (to_append) flags |= O_APPEND;
-        mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
-        int file_fd = open(pathname.c_str(), flags, mode);
-        if (file_fd < 0) { // can't continue
-            perror("smash error: open failed");
-            exit(0);
-        }
 
         // put file descriptor in STDOUT place
         if (dup2(file_fd, STDOUT) < 0) {  // can't continue
