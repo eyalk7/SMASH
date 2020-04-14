@@ -212,16 +212,60 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
         shell->updateJobs();
 }
 void PipeCommand::execute() {
-    int my_pipe[2];
-    if (pipe(my_pipe) == -1) {
-        perror("smash error: pipe failed");
+    pid_t pid = fork();
+
+    if (pid == 0) { // child process
+        setpgrp();      // make sure that the child gets a different GROUP ID
+
+        pid_t pid1, pid2;
+        bool success = Pipe(&pid1, &pid2);
+        if (!sucess) {
+            // kill this process and it's children
+            if (killpg(gpid, SIGINT) < 0) {
+                perror("smash error: killpg failed");
+                exit(0);
+            }
+            // exit(0); - if killpg suceeded then this process dies too
+        }
+
+        if (waitpid(pid1, nullptr, 0) < 0) perror("smash error: waitpid failed");
+        if (waitpid(pid2, nullptr, 0) < 0) perror("smash error: waitpid failed");
+        exit(0);
+    } else if (pid < 0) {
+        perror("smash error: fork failed");
         return;
     }
 
-    pid_t pid1 = fork();
-    if (pid1 == 0) {    // child process for command1
-        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
+    if (background) {
+        shell->addJob(pid, original_cmd);
+    } else {
+        if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
+            if (waitpid(pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
+            return;
+        }
 
+        // wait for child to finish
+        // add to jobs list if stopped
+        CURR_FORK_CHILD_RUNNING = pid;
+        int status;
+        if (waitpid(pid, &status, WUNTRACED) < 0) {
+            perror("smash error: waitpid failed");
+        } else {
+            if (WIFSTOPPED(status)) shell->addJob(pid, original_cmd, true);
+        }
+        CURR_FORK_CHILD_RUNNING = 0;
+    }
+}
+
+bool PipeCommand::Pipe(pid_t* pid1, pid_t* pid2) {
+    int my_pipe[2];
+    if (pipe(my_pipe) == -1) {
+        perror("smash error: pipe failed");
+        exit(0);
+    }
+
+    *pid1 = fork();
+    if (*pid1 == 0) {    // child process for command1
         // close read channel
         if (close(my_pipe[0]) == -1) perror("smash error: close failed");
 
@@ -229,97 +273,44 @@ void PipeCommand::execute() {
         int write_channel = has_ampersand ? STDERR : STDOUT;
         if (dup2(my_pipe[1], write_channel) == -1) {
             perror("smash error: dup2 failed");
+            if (close(my_pipe[1]) == -1) perror("smash error: close failed");
             exit(0);
         }
 
         shell->executeCommand(command1.c_str()); // execute the command before the pipe
         exit(0);
 
-    } else if (pid1 < 0)  {
+    } else if (*pid1 < 0)  {
         perror("smash error: fork failed");
-        // close parent's pipe
-        if (close(my_pipe[0]) == -1) perror("smash error: close failed");
-        if (close(my_pipe[1]) == -1) perror("smash error: close failed");
-        return;
+        return false;
     }
 
-    pid_t pid2 = fork();
-    if (pid2 == 0) {    // child process for command2
-        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
-
+    *pid2 = fork();
+    if (*pid2 == 0) {    // child process for command2
         // close write channel
         if (close(my_pipe[1]) == -1) perror("smash error: close failed");
 
         // set the new read channel
-        if (dup2(my_pipe[0], STDIN) == -1) perror("smash error: dup2 failed"); // todo: return if fail
+        if (dup2(my_pipe[0], STDIN) == -1) {
+            perror("smash error: dup2 failed");
+            if (close(my_pipe[0]) == -1) perror("smash error: close failed");
+            exit(0);
+        }
 
         shell->executeCommand(command2.c_str()); // execute the command after the pipe
         exit(0);
 
-    }  else if (pid2 < 0) {
+    }  else if (*pid2 < 0) {
         perror("smash error: fork failed");
-        // close parent's pipe
-        if (close(my_pipe[0]) == -1) perror("smash error: close failed");
-        if (close(my_pipe[1]) == -1) perror("smash error: close failed");
-        return;
+        return false;
     }
 
-    // close parent's pipe
+    // close pipe
     if (close(my_pipe[0]) == -1) perror("smash error: close failed");
     if (close(my_pipe[1]) == -1) perror("smash error: close failed");
-
-    if (background) {
-        shell->addJob(pid1, command1);
-        shell->addJob(pid2, command2);
-    } else {
-
-        if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
-            waitpid(pid2, nullptr, 0);
-            waitpid(pid1, nullptr, 0);
-            return;
-        }
-
-        int status;
-
-        // wait for the second command to finish
-        CURR_FORK_CHILD_RUNNING = pid2;
-        if (waitpid(pid2, &status, WUNTRACED) < 0) {
-            perror("smash error: waitpid failed");
-            // todo: maybe need to wait command1 even if command2's wait failed?
-
-        } else if (WIFSTOPPED(status)) { // if SIGTSTP was called
-            // check if command1 finished
-            if (waitpid(pid1, &status, WNOHANG) < 0) {
-                perror("smash error: waitpid failed");
-            } else if (!WIFEXITED(status)) {
-                // if command1 didn't finish, stop it
-                // and add it to the jobs list
-                pid_t gpid1 = getpgid(pid1);
-                if (gpid1 < 0) {
-                    perror("smash error: getgpid failed");
-                    return;
-                }
-
-                // send signal, print message
-                if (killpg(gpid1, SIGSTOP) < 0) { // can't continue
-                    perror("smash error: killpg failed");
-                    return;
-                } else {
-                    shell->addJob(pid1, command1, true); // todo: see https://piazza.com/class/k7s8mucctm92mq?cid=53
-                }                                                  // todo: insert pipe as one command to the joblist
-            }                                                      // todo: we need to print the original cmd_line (in jobs list). waiting for answer in piazza
-
-            // add command2 to the jobs list
-            shell->addJob(pid2, command2, true);
-
-        } else { // if SIGTSTP wasn't called    // todo: added this
-            // just wait command 1
-            if (waitpid(pid1, &status, WUNTRACED) < 0) perror("smash error: waitpid failed");
-            // todo: i can think about a fringe edge case here. can you see it?
-        }
-        CURR_FORK_CHILD_RUNNING = 0;
-    }
+    return true;
 }
+
 
 RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
                                                                                     shell(shell),
@@ -423,7 +414,7 @@ void ExternalCommand::execute() {
         } else {
 
             if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
-                waitpid(pid, nullptr, 0);
+                if (waitpid(pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
                 return;
             }
 

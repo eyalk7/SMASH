@@ -102,6 +102,9 @@ public:
     RedirectionCommand(const char* cmd_line, SmallShell* shell);
     virtual ~RedirectionCommand() = default;
     void execute() override;
+private:
+    bool Pipe(pid_t* pid1, pid_t* pid2);
+
 };
 
 //---------------------------EXTERNAL CLASS------------------------------
