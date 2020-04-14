@@ -340,11 +340,6 @@ void RedirectionCommand::execute() {
     if (pid == 0) { // child
         if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
 
-        if (close(STDOUT) < 0) {
-            perror("smash error: open failed");
-            exit(0);
-        }
-
         // open file, if to_append is true open in append mode
         int flags = O_CREAT | O_WRONLY;
         if (to_append) flags |= O_APPEND;
@@ -355,7 +350,16 @@ void RedirectionCommand::execute() {
             exit(0);
         }
 
+        // put file descriptor in STDOUT place
+        if (dup2(file_fd, STDOUT) < 0) {  // can't continue
+            perror("smash error: dup2 failed");
+            if (close(file_fd) < 0) perror("smash error: close failed");
+            exit(0);
+        }
+
         shell->executeCommand(cmd_part.c_str());
+
+        if (close(file_fd) < 0) perror("smash error: close failed");
         exit(0);
 
     } else if (pid > 0) { // parent
