@@ -408,6 +408,12 @@ void ExternalCommand::execute() {
         if (to_background) {
             jobs->addJob(pid, original_cmd);
         } else {
+
+            if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
+                waitpid(pid, nullptr, 0);
+                return;
+            }
+
             // wait for job
             // add to jobs list if stopped
             CURR_FORK_CHILD_RUNNING = pid;
@@ -611,6 +617,8 @@ ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    
         return;
     }
 
+    if (job_id == 0) return; // no arguments, get last job
+
     auto job_entry = jobs->getJobById(job_id);
     if (!job_entry) {
         printJobError(job_id);
@@ -652,17 +660,22 @@ void ForegroundCommand::execute() {
         return;
     }
 
-    // remove from jobs list
-    jobs->removeJobById(job_id);
+    if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
+        waitpid(pid, nullptr, 0);
+        return;
+    }
 
     // wait for job
-    // add to jobs list if stopped
+    // nullify start time if stopped again
     CURR_FORK_CHILD_RUNNING = pid;
     int status;
     if (waitpid(pid, &status, WUNTRACED) < 0) {
         perror("smash error: waitpid failed");
     } else {
-        if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_str, true);
+        if (WIFSTOPPED(status)) {
+            job->start_time = time(nullptr);
+            if (job->start_time == (time_t)(-1)) perror("smash error: time failed");
+        }
     }
     CURR_FORK_CHILD_RUNNING = 0;
 }
@@ -685,6 +698,8 @@ BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : Bui
         job_id = -1;
         return;
     }
+
+    if (job_id == 0) return; // no arguments, get last job
 
     auto job_entry = jobs->getJobById(job_id);
     if (!job_entry) {
@@ -855,6 +870,12 @@ void CopyCommand::execute() {
     if (background)     // run in background
         jobs->addJob(pid, original_cmd);
     else {              // run in foreground
+
+        if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
+            waitpid(pid, nullptr, 0);
+            return;
+        }
+
         int status;
         CURR_FORK_CHILD_RUNNING = pid;
         if (waitpid(pid, &status, WUNTRACED) < 0) {
