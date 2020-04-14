@@ -26,7 +26,7 @@ using std::vector;
 using std::string;
 using std::map;
 
-// mecros
+// macros
 #define COMMAND_MAX_ARGS (20)
 #define COMMAND_MAX_CHARS (80)
 #define COPY_DATA_BUFFER_SIZE (1024);
