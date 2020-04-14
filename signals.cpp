@@ -12,8 +12,16 @@ void ctrlZHandler(int sig_num) {
 	if (CURR_FORK_CHILD_RUNNING == 0) return;
 
     // send SIGSTOP to CURR_FORK_CHILD_RUNNING
-    if (kill(CURR_FORK_CHILD_RUNNING, SIGSTOP) < 0) {
-        perror("smash error: kill failed");
+    pid_t gpid = getpgid(CURR_FORK_CHILD_RUNNING);
+    if (gpid < 0) {
+        perror("smash error: getgpid failed");
+        return;
+    }
+
+    // send signal, print message
+    if (killpg(gpid, SIGSTOP) < 0) { // can't continue
+        perror("smash error: killpg failed");
+        return;
     } else {
         cout << "smash: process " << CURR_FORK_CHILD_RUNNING << " was stopped" << endl;
     }
@@ -26,8 +34,16 @@ void ctrlCHandler(int sig_num) {
     if (CURR_FORK_CHILD_RUNNING == 0) return;
 
     // send SIGSTOP to CURR_FORK_CHILD_RUNNING
-    if (kill(CURR_FORK_CHILD_RUNNING, SIGKILL) < 0) {
-        perror("smash error: kill failed");
+    pid_t gpid = getpgid(CURR_FORK_CHILD_RUNNING);
+    if (gpid < 0) {
+        perror("smash error: getgpid failed");
+        return;
+    }
+
+    // send signal, print message
+    if (killpg(gpid, SIGSTOP) < 0) { // can't continue
+        perror("smash error: killpg failed");
+        return;
     } else {
         cout << "smash: process " << CURR_FORK_CHILD_RUNNING << " was killed" << endl;
     }

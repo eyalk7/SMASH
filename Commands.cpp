@@ -123,7 +123,9 @@ void JobsList::killAllJobs() {
     // interate on map, print message and send SIGKILL than wait them
     for (const auto& job : jobs) {
         cout << job.second.pid << " " << job.second.cmd_str << endl;
-        if (kill(job.second.pid, SIGKILL) < 0) perror("smash error: kill failed");
+        pid_t gpid = getpgid(job.second.pid);
+        if (gpid < 0) perror("smash error: getgpid failed");
+        if (killpg(gpid, SIGKILL) < 0) perror("smash error: killpg failed");
         if (waitpid(job.second.pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
     }
 }
@@ -218,7 +220,7 @@ void PipeCommand::execute() {
 
     pid_t pid1 = fork();
     if (pid1 == 0) {    // child process for command1
-        setpgrp();              // make sure that the child get different GROUP ID
+        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
 
         // close read channel
         if (close(my_pipe[0]) == -1) perror("smash error: close failed");
@@ -243,7 +245,7 @@ void PipeCommand::execute() {
 
     pid_t pid2 = fork();
     if (pid2 == 0) {    // child process for command2
-        setpgrp();              // make sure that the child get different GROUP ID
+        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
 
         // close write channel
         if (close(my_pipe[1]) == -1) perror("smash error: close failed");
@@ -285,8 +287,16 @@ void PipeCommand::execute() {
             } else if (!WIFEXITED(status)) {
                 // if command1 didn't finish, stop it
                 // and add it to the jobs list
-                if (kill(pid1, SIGSTOP) < 0) {
-                    perror("smash error: kill failed");
+                pid_t gpid1 = getpgid(pid1);
+                if (gpid1 < 0) {
+                    perror("smash error: getgpid failed");
+                    return;
+                }
+
+                // send signal, print message
+                if (killpg(gpid1, SIGSTOP) < 0) { // can't continue
+                    perror("smash error: killpg failed");
+                    return;
                 } else {
                     shell->addJob(pid1, command1, true); // todo: see https://piazza.com/class/k7s8mucctm92mq?cid=53
                 }                                                  // todo: insert pipe as one command to the joblist
@@ -325,41 +335,11 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
     if (checkAndRemoveAmpersand(pathname)) to_background = true;
 }
 void RedirectionCommand::execute() {
-
-    /*
-    // open file, if to_append is true open in append mode
-    int flags = O_CREAT | O_WRONLY;
-    if (to_append) flags |= O_APPEND;
-    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
-    int file_fd = open(pathname.c_str(), flags, mode);
-    if (file_fd < 0) { // can't continue
-        perror("smash error: open failed");
-        return;
-    }
-
-    // move stdout to other file descriptor
-    int stdout_fd = dup(STDOUT);
-    if (stdout_fd < 0) {  // can't continue
-        perror("smash error: dup failed");
-        if (close(file_fd) < 0) perror("smash error: close failed");
-        return;
-    }
-
-    // put file descriptor in 1st place
-    if (dup2(file_fd, STDOUT) < 0) {  // can't continue
-        perror("smash error: dup2 failed");
-        if (close(file_fd) < 0) perror("smash error: close failed");
-        if (close(stdout_fd) < 0) perror("smash error: close failed");
-        return;
-    }
-
-    // shell.execute the command
-
-    */
-
     pid_t pid = fork();
 
     if (pid == 0) { // child
+        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
+
         if (close(STDOUT) < 0) {
             perror("smash error: open failed");
             exit(0);
@@ -397,13 +377,6 @@ void RedirectionCommand::execute() {
     } else {
         perror("smash error: fork failed");
     }
-
-    /*
-    // restore stdout and close all new file descriptors
-    if (dup2(stdout_fd, STDOUT) < 0) perror("smash error: dup2 failed");
-    if (close(stdout_fd) < 0) perror("smash error: close failed");
-    if (close(file_fd) < 0) perror("smash error: close failed");
-     */
 }
 
 //---------------------------EXTERNAL CLASS------------------------------
@@ -417,7 +390,7 @@ void ExternalCommand::execute() {
     pid_t pid = fork();
 
     if (pid == 0) { //child:
-        if (getppid() == SMASH_PROCESS_PID) setpgrp(); // no possible errors
+        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
 
         // exec to bash with cmd_line
         string arg1 = "-c";
@@ -570,8 +543,8 @@ void KillCommand::execute() {
     }
 
     // send signal, print message
-    if (kill(job_entry->pid, signum) < 0) { // can't continue
-        perror("smash error: kill failed");
+    if (killpg(gpid, signum) < 0) { // can't continue
+        perror("smash error: killpg failed");
         return;
     }
     printSignalSent(signum, job_entry->pid);
@@ -663,8 +636,15 @@ void ForegroundCommand::execute() {
     cout << cmd_str << " : " << pid << endl;
 
     // send SIGCONT to job's pid
-    if (kill(pid, SIGCONT) < 0) { // can't continue
-        perror("smash error: kill failed");
+    pid_t gpid = getpgid(pid);
+    if (gpid < 0) {
+        perror("smash error: getgpid failed");
+        return;
+    }
+
+    // send signal, print message
+    if (killpg(gpid, SIGCONT) < 0) { // can't continue
+        perror("smash error: killpg failed");
         return;
     }
 
@@ -735,8 +715,17 @@ void BackgroundCommand::execute() {
 
     // send SIGCONT to job's pid
     // update is_stopped
-    if (kill(job->pid, SIGCONT) < 0) {
-        perror("smash error: kill failed");
+
+    pid_t gpid = getpgid(job->pid);
+    if (gpid < 0) {
+        perror("smash error: getgpid failed");
+        return;
+    }
+
+    // send signal, print message
+    if (killpg(gpid, SIGCONT) < 0) { // can't continue
+        perror("smash error: killpg failed");
+        return;
     } else {
         job->is_stopped = false;
     }
@@ -829,7 +818,7 @@ void CopyCommand::execute() {
 
     pid_t pid = fork();
     if (pid == 0) { // copy data in child process
-        setpgrp();
+        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
         signal(SIGTSTP, SIG_DFL); // stop if get SIGTSTP
 
         int SIZE = COPY_DATA_BUFFER_SIZE;
