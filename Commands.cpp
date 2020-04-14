@@ -164,9 +164,6 @@ JobEntry* JobsList::getJobById(JobID jobId) {
     return &jobs[jobId];
 }
 void JobsList::removeJobById(JobID jobId) {
-    // remove zombies from jobs list
-    removeFinishedJobs();
-
     if (jobs.count(jobId) > 0) {
         jobs.erase(jobId);
     }
@@ -240,7 +237,7 @@ void PipeCommand::execute() {
 
         if (!success) {
             // kill this process and it's children
-            pid_t gpid = getpgid(CURR_FORK_CHILD_RUNNING);
+            pid_t gpid = getpgid(CURR_FORK_CHILD_RUNNING); //todo: dangerous to use global variable here
             if (gpid < 0) {
                 perror("smash error: getgpid failed");
                 exit(0);
@@ -656,6 +653,9 @@ void ForegroundCommand::execute() {
     // print job's command line
     cout << cmd_str << " : " << pid << endl;
 
+    // update state to not stopped
+    job->is_stopped = false;
+
     // send SIGCONT to job's pid
     pid_t gpid = getpgid(pid);
     if (gpid < 0) {
@@ -669,18 +669,28 @@ void ForegroundCommand::execute() {
         return;
     }
 
-    if (isChild(pid)) return;
+    //if (isChild(pid)) return;
+    if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
+        while (kill(pid, 0) == 0) { // continued process still running
+            pause();
+        }
+        return;
+    }
+
 
     // wait for job
     // nullify start time if stopped again
     CURR_FORK_CHILD_RUNNING = pid;
     int status;
     if (waitpid(pid, &status, WUNTRACED) < 0) {
-        perror("smash error: waitpid failed");
+        perror("smash error: waitid failed");
     } else {
-        if (WIFSTOPPED(status)) {
+        if (WIFSTOPPED(status)) { // process stop so just renew time and update status
             job->start_time = time(nullptr);
             if (job->start_time == (time_t)(-1)) perror("smash error: time failed");
+            job->is_stopped = true;
+        } else { // remove from jobs list
+            jobs->removeJobById(job_id);
         }
     }
     CURR_FORK_CHILD_RUNNING = 0;

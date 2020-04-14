@@ -41,7 +41,7 @@ void ctrlCHandler(int sig_num) {
     }
 
     // send signal, print message
-    if (killpg(gpid, SIGSTOP) < 0) { // can't continue
+    if (killpg(gpid, SIGKILL) < 0) { // can't continue
         perror("smash error: killpg failed");
         return;
     } else {
