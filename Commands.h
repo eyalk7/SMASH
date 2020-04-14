@@ -2,27 +2,33 @@
 #define SMASH_COMMAND_H_
 
 #include <vector>
-#include <string>
-#include <time.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <map>
-#include <errno.h>
+#include <string>
+#include <cstring>
+#include <limits>
+
+#include <ctime>
+#include <cerrno>
+#include <csignal>
+#include <unistd.h>
+#include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <assert.h>
-#include <signal.h>
+
+#include <iostream>
+#include <sstream>
+#include <iomanip>
+
+#include "Commands.h"
 
 using std::vector;
 using std::string;
 using std::map;
 
-#define COMMAND_ARGS_MAX_LENGTH (200)
+// mecros
 #define COMMAND_MAX_ARGS (20)
 #define COMMAND_MAX_CHARS (80)
-#define MAX_PROCESS_COUNT (100)
 #define COPY_DATA_BUFFER_SIZE (1024);
 
 #define STDIN 0
@@ -34,15 +40,6 @@ extern pid_t CURR_FORK_CHILD_RUNNING;
 extern pid_t SMASH_PROCESS_PID;
 
 class SmallShell;
-
-class Command {
-protected:
-    string cmd_line;
- public:
-    explicit Command(const char* cmd_line) : cmd_line(cmd_line) {};
-    virtual ~Command() = default;
-    virtual void execute() = 0;
-};
 
 //---------------------------JOBS LISTS------------------------------
 struct JobEntry {
@@ -71,6 +68,18 @@ private:
   map<JobID,JobEntry> jobs;
 };
 
+//-------------------------ABSTRACT COMMAND------------------------
+
+class Command {
+protected:
+    string original_cmd;
+public:
+    explicit Command(const char* cmd_line) : original_cmd(cmd_line) {};
+    virtual ~Command() = default;
+    virtual void execute() = 0;
+};
+
+
 //-------------------------SPECIAL COMMANDS-------------------------
 
 class PipeCommand : public Command {
@@ -92,16 +101,14 @@ public:
     RedirectionCommand(const char* cmd_line, SmallShell* shell);
     virtual ~RedirectionCommand() = default;
     void execute() override;
-    //void prepare() override;
-    //void cleanup() override;
 };
 
 //---------------------------EXTERNAL CLASS------------------------------
 
 class ExternalCommand : public Command {
+    string cmd_to_son;
     JobsList* jobs;
     bool to_background;
-    string cmd_to_son;
 public:
     ExternalCommand(const char* cmd_line, JobsList* jobs);
     virtual ~ExternalCommand() = default;
@@ -209,7 +216,6 @@ public:
     void execute() override;
 };
 
-// TODO: should it really inherit from BuiltInCommand ?
 class CopyCommand : public BuiltInCommand {
     string old_path, new_path;
     bool background;
@@ -219,7 +225,8 @@ public:
     virtual ~CopyCommand() = default;
     void execute() override;
 };
-//---------------------------END OF BUILT IN--------------------------------
+
+//---------------------------SMALL SHELL--------------------------------
 
 class SmallShell {
  private:

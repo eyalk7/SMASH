@@ -1,15 +1,11 @@
-#include <unistd.h>
-#include <string.h>
-#include <iostream>
-#include <sstream>
-#include <iomanip>
 #include "Commands.h"
-#include <limits>
 
 using namespace std;
 
 // definition of CURR_FORK_CHILD_RUNNING`
 pid_t CURR_FORK_CHILD_RUNNING = 0;
+
+//----------------------GIVEN PARSING FUNCTIONS------------------------------------
 
 const std::string WHITESPACE = " \n\r\t\f\v";
 
@@ -57,6 +53,8 @@ int _parseCommandLine(const char* cmd_line, char** args) {
 
   FUNC_EXIT()
 }
+
+//----------------------------OUR CODE-------------------------------------------
 
 bool checkAndRemoveAmpersand(string& str) {
     if (str.empty()) return false;
@@ -188,7 +186,10 @@ JobEntry* JobsList::getLastStoppedJob(JobID* jobId) {
 }
 //-------------------------SPECIAL COMMANDS-------------------------
 PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_line),
-                                                                    shell(shell), has_ampersand(false), background(false) {
+                                                                    shell(shell),
+                                                                    has_ampersand(false),
+                                                                    background(false) {
+    // parse
     string command(cmd_line);
     int pipe_index = command.find_first_of("|");
 
@@ -202,27 +203,34 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
     command2 = _trim(command.substr(pipe_index+1, command.length() - pipe_index - 1));
     if (checkAndRemoveAmpersand(command2)) background = true;
 
+    // if the first command is jobs, update jobs because child can't
     if (command1.compare("jobs") == 0 || command1.find("jobs ") == 0)
         shell->updateJobs();
 }
 void PipeCommand::execute() {
     int my_pipe[2];
-    if (pipe(my_pipe) == -1) perror("smash error: pipe failed");
+    if (pipe(my_pipe) == -1) { // todo: added this
+        perror("smash error: pipe failed");
+        return;
+    }
 
     pid_t pid1 = fork();
     if (pid1 == 0) {    // child process for command1
         setpgrp();              // make sure that the child get different GROUP ID
 
         // close read channel
-        if (close(my_pipe[0]) == -1) perror("smash error: close failed");
+        if (close(my_pipe[0]) == -1) perror("smash error: close failed"); // todo: here it's ok to continue even if failed
 
         //set the new write channel
         int write_channel = has_ampersand ? STDERR : STDOUT;
-        if (dup2(my_pipe[1], write_channel) == -1) perror("smash error: dup2 failed");
+        if (dup2(my_pipe[1], write_channel) == -1) { // todo: added this
+            perror("smash error: dup2 failed");
+            return;
+        }
 
         shell->executeCommand(command1.c_str()); // execute the command before the pipe
-    } else if (pid1 < 1) perror("smash error: fork failed");
-    if (pid1 < 1) exit(0); // first child finished
+    } else if (pid1 < 1) perror("smash error: fork failed"); // todo: why not if pid < 0? also need to add return if fail (but need to close pipe first)
+    if (pid1 < 1) exit(0); // first child finished    // todo: if fork failed parent also do exit
 
     pid_t pid2 = fork();
     if (pid2 == 0) {    // child process for command2
@@ -232,12 +240,13 @@ void PipeCommand::execute() {
         if (close(my_pipe[1]) == -1) perror("smash error: close failed");
 
         // set the new read channel
-        if (dup2(my_pipe[0], STDIN) == -1) perror("smash error: dup2 failed");
+        if (dup2(my_pipe[0], STDIN) == -1) perror("smash error: dup2 failed"); // todo: return if fail
 
         shell->executeCommand(command2.c_str()); // execute the command after the pipe
-    } else if (pid2 < 1) perror("smash error: fork failed");
-    if (pid2 < 1) exit(0); // second child finished
+    } else if (pid2 < 1) perror("smash error: fork failed");    //todo: same
+    if (pid2 < 1) exit(0); // second child finished      // todo: same
 
+    // close parent's pipe
     if (close(my_pipe[0]) == -1) perror("smash error: close failed");
     if (close(my_pipe[1]) == -1) perror("smash error: close failed");
 
@@ -247,73 +256,99 @@ void PipeCommand::execute() {
     } else {
         int status;
 
+        // wait for the second command to finish
         CURR_FORK_CHILD_RUNNING = pid2;
-        if (waitpid(pid2, &status, WUNTRACED) < 0) {  // wait for the second command to finish
+        if (waitpid(pid2, &status, WUNTRACED) < 0) {
             perror("smash error: waitpid failed");
-        } else if (WIFSTOPPED(status)) { // if SIGSTOP was called
-            // if SIGSTOP was called
+            // todo: maybe need to wait command1 even if command2's wait failed?
+
+        } else if (WIFSTOPPED(status)) { // if SIGTSTP was called
             // check if command1 finished
             if (waitpid(pid1, &status, WNOHANG) < 0) {
                 perror("smash error: waitpid failed");
             } else if (!WIFEXITED(status)) {
                 // if command1 didn't finish, stop it
                 // and add it to the jobs list
-                if (kill(pid1, SIGSTOP) < 0) perror("smash error: kill failed");
-                else shell->addJob(pid1, command1, true);
-            }
+                if (kill(pid1, SIGSTOP) < 0) {
+                    perror("smash error: kill failed");
+                } else {
+                    shell->addJob(pid1, command1, true); // todo: see https://piazza.com/class/k7s8mucctm92mq?cid=53
+                }                                                  // todo: insert pipe as one command to the joblist
+            }                                                      // todo: we need to print the original cmd_line (in jobs list). waiting for answer in piazza
 
             // add command2 to the jobs list
             shell->addJob(pid2, command2, true);
-        }
 
+        } else { // if SIGTSTP wasn't called    // todo: added this
+            // just wait command 1
+            if (waitpid(pid1, &status, WUNTRACED) < 0) perror("smash error: waitpid failed");
+            // todo: i can think about a fringe edge case here. can you see it?
+        }
         CURR_FORK_CHILD_RUNNING = 0;
     }
 }
+
 RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
                                                                                     shell(shell),
                                                                                     to_append(false) {
     // find split place
-    int split_place = 0;
-    while (cmd_line[split_place] && cmd_line[split_place] != '>') split_place++;
+    int split_place = original_cmd.find_first_of(">");;
+
+    // check if need to append
     if (cmd_line[split_place+1] == '>') to_append = true;
 
     // save command part
-    cmd_part = string(cmd_line, split_place);
+    cmd_part = _trim(original_cmd.substr(0, split_place));
 
     // and file address part
     if (to_append) split_place++;
-    pathname = cmd_line+split_place+1;
-    pathname = _ltrim(pathname);
+    pathname = _trim(original_cmd.substr(split_place+1));
+
+    // move ampersand from pathname to cmd_part if there is one
     if (checkAndRemoveAmpersand(pathname)) cmd_part += "&";
 }
 void RedirectionCommand::execute() {
-    // open file, if to_append == true open in append mode
+    // open file, if to_append is true open in append mode
     int flags = O_CREAT | O_WRONLY;
     if (to_append) flags |= O_APPEND;
-    mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
     int file_fd = open(pathname.c_str(), flags, mode);
-    if (file_fd < 0) perror("smash error: open failed");
+    if (file_fd < 0) { // can't continue
+        perror("smash error: open failed");
+        return;
+    }
 
     // move stdout to other file descriptor
     int stdout_fd = dup(STDOUT);
-    if (stdout_fd < 0) perror("smash error: dup failed");
+    if (stdout_fd < 0) {  // can't continue
+        perror("smash error: dup failed");
+        if (close(file_fd) < 0) perror("smash error: close failed");
+        return;
+    }
 
     // put file descriptor in 1st place
-    if (dup2(file_fd, STDOUT) < 0) perror("smash error: dup2 failed");
+    if (dup2(file_fd, STDOUT) < 0) {  // can't continue
+        perror("smash error: dup2 failed");
+        if (close(file_fd) < 0) perror("smash error: close failed");
+        if (close(stdout_fd) < 0) perror("smash error: close failed");
+        return;
+    }
 
     // shell.execute the command
     shell->executeCommand(cmd_part.c_str());
+    // todo: maybe we need to print the original cmd_line (in jobs list). waiting for answer in piazza
 
     // restore stdout and close all new file descriptors
     if (dup2(stdout_fd, STDOUT) < 0) perror("smash error: dup2 failed");
     if (close(stdout_fd) < 0) perror("smash error: close failed");
     if (close(file_fd) < 0) perror("smash error: close failed");
 }
+
 //---------------------------EXTERNAL CLASS------------------------------
 ExternalCommand::ExternalCommand(const char* cmd_line, JobsList* jobs) :    Command(cmd_line),
+                                                                            cmd_to_son(cmd_line),
                                                                             jobs(jobs),
-                                                                            to_background(false),
-                                                                            cmd_to_son(cmd_line) {
+                                                                            to_background(false) {
     if (checkAndRemoveAmpersand(cmd_to_son)) to_background = true;
 }
 void ExternalCommand::execute() {
@@ -332,7 +367,7 @@ void ExternalCommand::execute() {
     else if (pid > 0) { //parent
         // if with "&" add to JOBS LIST and return
         if (to_background) {
-            jobs->addJob(pid, cmd_line);
+            jobs->addJob(pid, original_cmd);
         } else {
             // wait for job
             // add to jobs list if stopped
@@ -341,7 +376,7 @@ void ExternalCommand::execute() {
             if (waitpid(pid, &status, WUNTRACED) < 0) {
                 perror("smash error: waitpid failed");
             } else {
-                if (WIFSTOPPED(status)) jobs->addJob(pid, cmd_line, true);
+                if (WIFSTOPPED(status)) jobs->addJob(pid, original_cmd, true);
             }
             CURR_FORK_CHILD_RUNNING = 0;
         }
@@ -357,10 +392,15 @@ ChangePromptCommand::ChangePromptCommand(const char* cmd_line, SmallShell* shell
                                                                                     prompt("smash") {
     // no argument = change to default prompt "smash"
     // otherwise, get the new prompt text
+    string tmp;
     char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
-    if (num_of_args > 1) prompt = args[1]; // save prompt string
+    if (num_of_args > 1) tmp = args[1]; // save prompt string
     for (int i = 0; i < num_of_args; i++) free(args[i]);
+
+    // remove ampersand
+    checkAndRemoveAmpersand(tmp);
+    if (!tmp.empty()) prompt = tmp;
 }
 void ChangePromptCommand::execute() {
     // change shell prompt
@@ -374,20 +414,28 @@ void ShowPidCommand::execute() {
 
 void GetCurrDirCommand::execute() {
     char* dir = getcwd(nullptr, COMMAND_MAX_CHARS + 1);
-    std::cout << dir << endl;
-    free(dir);
+    if (!dir) {
+        perror("smash error: getcwd failed");
+    } else {
+        std::cout << dir << endl;
+        free(dir);
+    }
 }
 
 ChangeDirCommand::ChangeDirCommand(const char* cmd_line, string* last_dir) : BuiltInCommand(cmd_line),
-                                                                             new_path(""), old_pwd(last_dir) {
+                                                                             new_path(""),
+                                                                             old_pwd(last_dir) {
     char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
 
-    if (num_of_args > 2) // more than one argument
-        std::cout <<"smash error: cd: too many arguments" << std::endl;
-    else if (num_of_args == 2)
+    if (num_of_args > 2) { // more than one argument
+        std::cout << "smash error: cd: too many arguments" << std::endl;
+    } else if (num_of_args == 2) {
         new_path = args[1];
-    // else new_path = ""; (in initializer list)
+        // else new_path = ""; (in initializer list)
+        // todo: cd can be without arguments. see https://piazza.com/class/k7s8mucctm92mq?cid=62
+        // todo: also need to save curr directory in old_pwd if cd was called without arguments
+    }
 
     for (int i = 0; i < num_of_args; i++) free(args[i]);
 }
@@ -396,16 +444,21 @@ void ChangeDirCommand::execute() {
 
     // get current directory to save after
     char* dir = getcwd(nullptr, COMMAND_MAX_CHARS + 1);
+    if (!dir) {
+        perror("smash error: getcwd failed");
+        // todo: return? or continue without saving the previous directory (both have disadvantages)
+    }
     string updated_old_pwd(dir);
     free(dir);
 
     int retVAl = 0;
     if (new_path == "-") // change to last directory
     {
-        if (old_pwd->empty()) // if no old_pwd print error
+        if (old_pwd->empty()) { // if no old_pwd print error
             std::cout << "smash error: cd: OLDPWD not set" << std::endl;
-        else
+        } else {
             retVAl = chdir(old_pwd->c_str());
+        }
     }
     else retVAl = chdir(new_path.c_str()); // change to given path
 
@@ -449,7 +502,10 @@ void KillCommand::execute() {
     auto job_entry = jobs->getJobById(job_id);
 
     // send signal, print message
-    if (kill(job_entry->pid, signum) < 0) perror("smash error: kill failed");
+    if (kill(job_entry->pid, signum) < 0) { // can't continue
+        perror("smash error: kill failed");
+        return;
+    }
     printSignalSent(signum, job_entry->pid);
 
     // if signal was SIGSTOP or SIGTSTP update job state to stopped
@@ -535,14 +591,17 @@ void ForegroundCommand::execute() {
     int pid = job->pid;
     string cmd_str = job->cmd_str;
 
-    // remove from jobs list
-    jobs->removeJobById(job_id);
-
     // print job's command line
     cout << cmd_str << " : " << pid << endl;
 
     // send SIGCONT to job's pid
-    if (kill(pid, SIGCONT) < 0) perror("smash error: kill failed");
+    if (kill(pid, SIGCONT) < 0) { // can't continue
+        perror("smash error: kill failed");
+        return;
+    }
+
+    // remove from jobs list
+    jobs->removeJobById(job_id);
 
     // wait for job
     // add to jobs list if stopped
@@ -608,8 +667,11 @@ void BackgroundCommand::execute() {
 
     // send SIGCONT to job's pid
     // update is_stopped
-    job->is_stopped = false;
-    if (kill(job->pid, SIGCONT) < 0) perror("smash error: kill failed");
+    if (kill(job->pid, SIGCONT) < 0) {
+        perror("smash error: kill failed");
+    } else {
+        job->is_stopped = false;
+    }
 }
 void BackgroundCommand::printArgumentsError() {
     cout << "smash error: b g: invalid arguments" << endl;
@@ -663,8 +725,10 @@ void QuitCommand::execute() {
 }
 
 CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
-                                                 old_path(""), new_path(""),
-                                                 background(false), jobs(jobs) {
+                                                                 old_path(""),
+                                                                 new_path(""),
+                                                                 background(false),
+                                                                 jobs(jobs) {
     char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
     if (num_of_args > 2) {
@@ -680,10 +744,13 @@ void CopyCommand::execute() {
 
     int read_flags = O_RDONLY;
     int fd_read = open(old_path.c_str(), read_flags);
-    if (fd_read == -1) { perror("smash error: open failed"); return; }
+    if (fd_read == -1) {
+        perror("smash error: open failed");
+        return;
+    }
 
     int write_flags = O_WRONLY | O_CREAT | O_TRUNC;
-    mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
 
     int fd_write = open(new_path.c_str(), write_flags, mode);
     if (fd_write == -1)  {
@@ -695,7 +762,7 @@ void CopyCommand::execute() {
     pid_t pid = fork();
     if (pid == 0) { // copy data in child process
         setpgrp();
-        signal(SIGTSTP, SIG_DFL);
+        signal(SIGTSTP, SIG_DFL); // stop if get SIGTSTP
 
         int SIZE = COPY_DATA_BUFFER_SIZE;
 
@@ -718,25 +785,24 @@ void CopyCommand::execute() {
     if (close(fd_read) == -1) perror("smash error: close failed");
     if (close(fd_write) == -1) perror("smash error: close failed");
 
-    if (pid < 1) exit(0);   // child process finished
+    if (pid < 1) exit(0);   // child process finished // todo: if fork failed parent also do exit
 
     // only parent process continues from here
 
     if (background)     // run in background
-        jobs->addJob(pid, cmd_line);
+        jobs->addJob(pid, original_cmd);
     else {              // run in foreground
         int status;
         CURR_FORK_CHILD_RUNNING = pid;
         if (waitpid(pid, &status, WUNTRACED) < 0) {
             perror("smash error: waitpid failed");
         } else if (WIFSTOPPED(status)) {
-            jobs->addJob(pid, cmd_line, true);
+            jobs->addJob(pid, original_cmd, true);
         }
 
         CURR_FORK_CHILD_RUNNING = 0;
     }
 }
-//---------------------------END OF BUILT IN--------------------------------
 
 //---------------------------SMALL SHELL--------------------------------------
 SmallShell::SmallShell() : prompt("smash"), old_pwd("") {
@@ -752,30 +818,30 @@ SmallShell::~SmallShell() {
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 Command* SmallShell::CreateCommand(const char* cmd_line) {
-    string cmd_s = _ltrim(string(cmd_line));
+    string cmd_s = _trim(string(cmd_line));
     if (cmd_s.find("|") != string::npos) {
         return new PipeCommand(cmd_line, this);
     } else if (cmd_s.find(">") != string::npos) {
         return new RedirectionCommand(cmd_line, this);
-    } else if (cmd_s.compare("chprompt") == 0 || cmd_s.find("chprompt ") == 0) {
+    } else if (cmd_s.compare("chprompt") == 0 || cmd_s.compare("chprompt&") == 0|| cmd_s.find("chprompt ") == 0) {
         return new ChangePromptCommand(cmd_line, this);
-    } else if (cmd_s.compare("showpid") == 0 || cmd_s.find("showpid ") == 0) {
+    } else if (cmd_s.compare("showpid") == 0 || cmd_s.compare("showpid&") == 0  || cmd_s.find("showpid ") == 0) {
         return new ShowPidCommand(cmd_line);
-    } else if (cmd_s.compare("pwd") == 0 || cmd_s.find("pwd ") == 0) {
+    } else if (cmd_s.compare("pwd") == 0 || cmd_s.compare("pwd&") == 0 ||cmd_s.find("pwd ") == 0) {
         return new GetCurrDirCommand(cmd_line);
-    } else if (cmd_s.compare("cd") == 0 || cmd_s.find("cd ") == 0) {
+    } else if (cmd_s.compare("cd") == 0 || cmd_s.compare("cd&") == 0 || cmd_s.find("cd ") == 0) {
         return new ChangeDirCommand(cmd_line, &this->old_pwd);
-    } else if (cmd_s.compare("jobs") == 0 || cmd_s.find("jobs ") == 0) {
+    } else if (cmd_s.compare("jobs") == 0 || cmd_s.compare("jobs&") == 0 || cmd_s.find("jobs ") == 0) {
         return new JobsCommand(cmd_line, this->jobs);
-    } else if (cmd_s.compare("kill") == 0 || cmd_s.find("kill ") == 0) {
+    } else if (cmd_s.compare("kill") == 0 || cmd_s.compare("kill&") == 0 || cmd_s.find("kill ") == 0) {
         return new KillCommand(cmd_line, this->jobs);
-    } else if (cmd_s.compare("fg") == 0 || cmd_s.find("fg ") == 0) {
+    } else if (cmd_s.compare("fg") == 0 || cmd_s.compare("fg&") == 0 ||cmd_s.find("fg ") == 0) {
         return new ForegroundCommand(cmd_line, this->jobs);
-    } else if (cmd_s.compare("bg") == 0 || cmd_s.find("bg ") == 0) {
+    } else if (cmd_s.compare("bg") == 0 || cmd_s.compare("bg&") == 0 ||cmd_s.find("bg ") == 0) {
         return new BackgroundCommand(cmd_line, this->jobs);
-    } else if (cmd_s.compare("quit") == 0 || cmd_s.find("quit ") == 0) {
+    } else if (cmd_s.compare("quit") == 0 || cmd_s.compare("quit&") == 0 || cmd_s.find("quit ") == 0) {
         return new QuitCommand(cmd_line, this->jobs);
-    } else if (cmd_s.compare("cp") == 0 || cmd_s.find("cp ") == 0) {
+    } else if (cmd_s.compare("cp") == 0 || cmd_s.compare("cp&") == 0 || cmd_s.find("cp ") == 0) {
         return new CopyCommand(cmd_line, this->jobs);
     } else {
         return new ExternalCommand(cmd_line, this->jobs);
