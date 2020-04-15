@@ -35,19 +35,24 @@ using std::map;
 #define STDOUT 1
 #define STDERR 2
 
+class JobsList;
+class SmallShell;
+
 // declaration of global variables
 extern pid_t CURR_FORK_CHILD_RUNNING;
 extern pid_t SMASH_PROCESS_PID;
+extern JobsList* GLOBAL_JOBS_POINTER;
 
-class SmallShell;
 
 //---------------------------JOBS LISTS------------------------------
 struct JobEntry {
-    explicit JobEntry(pid_t pid = 0, const string& cmd_str = "", bool is_stopped = false);
+    explicit JobEntry(pid_t pid = 0, const string& cmd_str = "", bool is_stopped = false, bool is_timeout = false, unsigned int duration = 0);
     pid_t pid;
     string cmd_str;
     bool is_stopped;
     time_t start_time;
+    bool is_timeout;
+    unsigned int duration;
 };
 typedef int JobID;
 
@@ -55,7 +60,7 @@ class JobsList {
 public:
     JobsList() = default;
     ~JobsList() = default;
-    void addJob(pid_t pid, const string& cmd_str, bool is_stopped = false);
+    JobEntry* addJob(pid_t pid, const string& cmd_str, bool is_stopped = false, bool is_timeout = false, unsigned int duration = 0);
     void printJobsList();
     void killAllJobs();
     void removeFinishedJobs();
@@ -64,8 +69,7 @@ public:
     JobEntry* getLastJob(JobID* lastJobId);
     JobEntry* getLastStoppedJob(JobID* jobId);
 
-private:
-  map<JobID,JobEntry> jobs;
+    map<JobID,JobEntry> jobs;
 };
 
 //-------------------------ABSTRACT COMMAND------------------------
@@ -111,6 +115,7 @@ class TimeoutCommand : public Command {
     SmallShell* shell;
     string cmd_part;
     int duration;
+    bool to_background;
 public:
     TimeoutCommand(const char* cmd_line, SmallShell* shell);
     virtual ~TimeoutCommand() = default;
@@ -262,7 +267,7 @@ class SmallShell {
   void executeCommand(const char* cmd_line);
   void changePrompt(const string& prompt);
   const string& getPrompt();
-  void addJob(pid_t pid, const string& str, bool is_stopped = false);
+  JobEntry* addJob(pid_t pid, const string& str, bool is_stopped = false, bool is_timeout = false, unsigned int duration = 0);
   void updateJobs();
 };
 

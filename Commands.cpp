@@ -4,6 +4,7 @@ using namespace std;
 
 // definition of CURR_FORK_CHILD_RUNNING`
 pid_t CURR_FORK_CHILD_RUNNING = 0;
+JobsList* GLOBAL_JOBS_POINTER = nullptr;
 
 //----------------------GIVEN PARSING FUNCTIONS------------------------------------
 
@@ -85,24 +86,28 @@ bool isChild(pid_t pid) {
 }
 
 //---------------------------JOBS LISTS------------------------------
-JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped) :  pid(pid),
-                                                                         cmd_str(cmd_str),
-                                                                         is_stopped(is_stopped) {
+JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped, bool is_timeout, unsigned int duration) : pid(pid),
+                                                                                                                cmd_str(cmd_str),
+                                                                                                                is_stopped(is_stopped),
+                                                                                                                is_timeout(is_timeout),
+                                                                                                                duration(duration) {
     start_time = time(nullptr);
     if (start_time == (time_t)(-1)) perror("smash error: time failed");
 
 }
-void JobsList::addJob(pid_t pid, const string& cmd_str, bool is_stopped) {
+JobEntry* JobsList::addJob(pid_t pid, const string& cmd_str, bool is_stopped, bool is_timeout, unsigned int duration) {
     // remove zombies from jobs list
     removeFinishedJobs();
 
     // create new job entry
-    JobEntry new_job(pid, cmd_str, is_stopped);
+    JobEntry new_job(pid, cmd_str, is_stopped, is_timeout, duration);
     JobID new_id = 1;
     if (!jobs.empty()) new_id = jobs.rbegin()->first + 1;
 
     // insert to map
     jobs[new_id] = new_job;
+
+    return &jobs[new_id];
 }
 void JobsList::printJobsList() {
     // remove zombies from jobs list
@@ -129,12 +134,13 @@ void JobsList::killAllJobs() {
     cout << "smash: sending SIGKILL signal to " << jobs.size() << " jobs:" << endl;
 
     // interate on map, print message and send SIGKILL than wait them
-    for (const auto& job : jobs) {
+    for (auto& job : jobs) {
         cout << job.second.pid << " " << job.second.cmd_str << endl;
         pid_t gpid = getpgid(job.second.pid);
         if (gpid < 0) perror("smash error: getgpid failed");
         if (killpg(gpid, SIGKILL) < 0) perror("smash error: killpg failed");
         if (waitpid(job.second.pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
+        job.second.pid = 0;
                                                                         // todo: add wait for other group children also
     }
 }
@@ -431,87 +437,48 @@ void RedirectionCommand::execute() {
 }
 
 TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
-                                                                                shell(shell),
-                                                                                    to_append(false),
-                                                                                    to_background(false),
-                                                                                    cmd_is_fg(false) {
-    // find split place
-    int split_place = original_cmd.find_first_of(">");;
+                                                                            shell(shell),
+                                                                            to_background (false){
+    if (getpid() != SMASH_PROCESS_PID) return; // only smash can handle this
 
-    // check if need to append
-    if (cmd_line[split_place+1] == '>') to_append = true;
+    //parsing
+    string tmp;
+    char* args[COMMAND_MAX_ARGS+1];
+    int num_of_args = _parseCommandLine(cmd_line, args);
+    if (num_of_args > 2) {
+        bool is_num = true;
+        for (int digit = 0; args[1][digit]; digit++) {
+            if (!isdigit(args[1][digit])) is_num = false;
+        }
+        if (is_num) duration = stoi(args[1]);
+        for (int i = 2; i < num_of_args; i++) {
+            cmd_part += string(args[i]);
+            cmd_part += " ";
+        }
+    }
+    for (int i = 0; i < num_of_args; i++) free(args[i]);
+    if (num_of_args < 3) return; // too few arguments
 
-    // save command part
-    cmd_part = _trim(original_cmd.substr(0, split_place));
-
-    // and file address part
-    if (to_append) split_place++;
-    pathname = _trim(original_cmd.substr(split_place+1));
-
-    // move ampersand from pathname to cmd_part if there is one
-    if (checkAndRemoveAmpersand(pathname)) to_background = true;
-
-    // check if cmd is fg
-    if (cmd_part.find("fg ") == 0) cmd_is_fg = true;
+    // remove ampersand and check to background
+    to_background = checkAndRemoveAmpersand(cmd_part);
 }
 void TimeoutCommand::execute() {
-
-    // open file, if to_append is true open in append mode
-    int flags = O_CREAT | O_WRONLY;
-    if (to_append) flags |= O_APPEND;
-    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
-    int file_fd = open(pathname.c_str(), flags, mode);
-    if (file_fd < 0) { // can't continue
-        perror("smash error: open failed");
-        return;
-    }
-
-    if (cmd_is_fg) {
-        auto stdout_fd = dup(STDOUT);
-        if (stdout_fd < 0) { // can't continue
-            perror("smash error: dup failed");
-            if (close(file_fd) < 0) perror("smash error: close failed");
-            return;
-        }
-        if (dup2(file_fd, STDOUT) < 0) {
-            perror("smash error: dup2 failed");
-            if (close(stdout_fd) < 0) perror("smash error: close failed");
-            if (close(file_fd) < 0) perror("smash error: close failed");
-            return;
-        }
-
-        shell->executeCommand(cmd_part.c_str());
-
-        if (dup2(stdout_fd, STDOUT) < 0) perror("smash error: dup2 failed");
-        if (close(stdout_fd) < 0) perror("smash error: close failed");
-        if (close(file_fd) < 0) perror("smash error: close failed");
-        return;
-    }
+    if (cmd_part.empty()) return; // no command to execute
 
     pid_t pid = fork();
 
     if (pid == 0) { // child
         if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
 
-        // put file descriptor in STDOUT place
-        if (dup2(file_fd, STDOUT) < 0) {  // can't continue
-            perror("smash error: dup2 failed");
-            if (close(file_fd) < 0) perror("smash error: close failed");
-            exit(0);
-        }
-
         shell->executeCommand(cmd_part.c_str());
-
-        if (close(file_fd) < 0) perror("smash error: close failed");
         exit(0);
 
     } else if (pid > 0) { // parent
-        if (isChild(pid)) return;
 
-        // if with "&" add to JOBS LIST and return
-        if (to_background) {
-            shell->addJob(pid, original_cmd);
-        } else {
+        JobEntry* job_entry = shell->addJob(pid, original_cmd, false, true, duration);
+        alarm(duration);
+
+        if (!to_background) {
             // wait for job
             // add to jobs list if stopped
             CURR_FORK_CHILD_RUNNING = pid;
@@ -519,7 +486,7 @@ void TimeoutCommand::execute() {
             if (waitpid(pid, &status, WUNTRACED) < 0) {
                 perror("smash error: waitpid failed");
             } else {
-                if (WIFSTOPPED(status)) shell->addJob(pid, original_cmd, true);
+                if (WIFSTOPPED(status)) job_entry->is_stopped = true;
             }
             CURR_FORK_CHILD_RUNNING = 0;
         }
@@ -1031,6 +998,7 @@ void CopyCommand::execute() {
 SmallShell::SmallShell() : prompt("smash"), old_pwd("") {
     jobs = new JobsList();
     CURR_FORK_CHILD_RUNNING = 0;
+    GLOBAL_JOBS_POINTER = jobs;
 }
 
 SmallShell::~SmallShell() {
@@ -1067,7 +1035,7 @@ Command* SmallShell::CreateCommand(const char* cmd_line) {
     } else if (cmd_s.compare("cp") == 0 || cmd_s.compare("cp&") == 0 || cmd_s.find("cp ") == 0) {
         return new CopyCommand(cmd_line, this->jobs);
     } else if (cmd_s.compare("timeout") == 0 || cmd_s.compare("timeout&") == 0 || cmd_s.find("timeout ") == 0) {
-        return new CopyCommand(cmd_line, this->jobs);
+        return new TimeoutCommand(cmd_line, this);
     } else {
         return new ExternalCommand(cmd_line, this->jobs);
     }
@@ -1088,8 +1056,8 @@ const string& SmallShell::getPrompt() {
     return prompt;
 }
 
-void SmallShell::addJob(pid_t pid, const string& str, bool is_stopped) {
-    jobs->addJob(pid, str, is_stopped);
+JobEntry* SmallShell::addJob(pid_t pid, const string& str, bool is_stopped, bool is_timeout, unsigned int duration) {
+    return jobs->addJob(pid, str, is_stopped, is_timeout, duration);
 }
 
 void SmallShell::updateJobs() {
