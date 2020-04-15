@@ -2,6 +2,7 @@
 #include "signals.h"
 
 pid_t SMASH_PROCESS_PID = 0;
+bool QUIT_SHELL = false;
 
 int main(int argc, char* argv[]) {
     SMASH_PROCESS_PID = getpid();
@@ -20,7 +21,7 @@ int main(int argc, char* argv[]) {
     }
 
     SmallShell& smash = SmallShell::getInstance();
-    while(true) {
+    while(!QUIT_SHELL) {
         std::cout << smash.getPrompt() + ">";
         std::string cmd_line;
         std::getline(std::cin, cmd_line);

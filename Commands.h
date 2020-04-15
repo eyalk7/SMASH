@@ -42,6 +42,7 @@ class SmallShell;
 extern pid_t CURR_FORK_CHILD_RUNNING;
 extern pid_t SMASH_PROCESS_PID;
 extern JobsList* GLOBAL_JOBS_POINTER;
+extern bool QUIT_SHELL;
 
 
 //---------------------------JOBS LISTS------------------------------

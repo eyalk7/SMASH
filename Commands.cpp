@@ -918,7 +918,7 @@ QuitCommand::QuitCommand(const char* cmd_line, JobsList* jobs) :    BuiltInComma
 }
 void QuitCommand::execute() {
     if (kill_all) jobs->killAllJobs();
-    exit(0);
+    QUIT_SHELL = true;
 }
 
 CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
