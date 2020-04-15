@@ -203,6 +203,7 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
     int pipe_index = command.find_first_of("|");
 
     command1 = _trim(command.substr(0, pipe_index));
+    checkAndRemoveAmpersand(command1);
 
     if (cmd_line[pipe_index + 1] == '&') {
         has_ampersand = true;
@@ -884,8 +885,8 @@ void CopyCommand::execute() {
         int SIZE = COPY_DATA_BUFFER_SIZE;
 
         char buff[SIZE];
-        int read_retVal = read(fd_read, buff, SIZE);
-        int write_retVal;
+        ssize_t read_retVal = read(fd_read, buff, SIZE);
+        ssize_t write_retVal;
         while (read_retVal > 0) {
             write_retVal = write(fd_write, buff, read_retVal);
             if (write_retVal == -1) perror("smash error: write failed");
