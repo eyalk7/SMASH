@@ -156,6 +156,10 @@ void JobsList::removeFinishedJobs() {
 
     // iterate on map, and waitpid with each pid WNOHANG flag
     for (const auto& job : jobs) {
+        if (job.second.pid == 0) {
+            to_remove[to_remove_iter++] = job.first;
+            continue;
+        }
         pid_t waited = waitpid(job.second.pid, nullptr, WNOHANG);
         if (waited < 0) perror("smash error: waitpid failed");
         if (waited > 0) to_remove[to_remove_iter++] = job.first;
@@ -490,7 +494,11 @@ void TimeoutCommand::execute() {
             if (waitpid(pid, &status, WUNTRACED) < 0) {
                 perror("smash error: waitpid failed");
             } else {
-                if (WIFSTOPPED(status)) job_entry->is_stopped = true;
+                if (WIFSTOPPED(status)) {
+                    job_entry->is_stopped = true;
+                } else { //finished, remove from jobslist
+                    job_entry->pid = 0;
+                }
             }
             CURR_FORK_CHILD_RUNNING = 0;
         }
