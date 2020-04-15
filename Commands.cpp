@@ -84,6 +84,10 @@ bool isChild(pid_t pid) {
     return false;
 }
 
+void printError(const string& msg) {
+    std::cout << "smash error: " << msg << endl;
+}
+
 //---------------------------JOBS LISTS------------------------------
 JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped) :  pid(pid),
                                                                          cmd_str(cmd_str),
@@ -615,7 +619,7 @@ ChangeDirCommand::ChangeDirCommand(const char* cmd_line, string* last_dir) : Bui
     int num_of_args = _parseCommandLine(cmd_line, args);
 
     if (num_of_args > 2) { // more than one argument
-        std::cout << "smash error: cd: too many arguments" << std::endl;
+        printError("cd: too many arguments");
     } else if (num_of_args == 2) {
         new_path = args[1];
     } // else new_path = "";  // command is "cd" without arguments
@@ -641,7 +645,7 @@ void ChangeDirCommand::execute() {
     if (new_path == "-") // change to last directory
     {
         if (old_pwd->empty()) { // if no old_pwd print error
-            std::cout << "smash error: cd: OLDPWD not set" << std::endl;
+            printError("cd: OLDPWD not set");
         } else {
             retVAl = chdir(old_pwd->c_str());
         }
