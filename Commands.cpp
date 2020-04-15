@@ -722,15 +722,15 @@ void KillCommand::printArgumentsError() {
 }
 void KillCommand::printJobError() {
     string str = "kill: job-id ";
-    str += job_id;
+    str += to_string(job_id);
     str += " does not exist";
     printError(str);
 }
 void KillCommand::printSignalSent(int sig, pid_t p) {
     string str = "signal number ";
-    str += sig;
+    str += to_string(sig);
     str += " was sent to pid ";
-    str += (int)p;
+    str += to_string((int)p);
     printError(str);
 }
 
@@ -812,7 +812,7 @@ void ForegroundCommand::printArgumentsError() {
 }
 void ForegroundCommand::printJobError(JobID job_id) {
     string str = "fg: job-id ";
-    str += job_id;
+    str += to_string(job_id);
     str += " does not exist";
     printError(str);
 }
@@ -885,7 +885,7 @@ void BackgroundCommand::printArgumentsError() {
 }
 void BackgroundCommand::printJobError(JobID job_id) {
     string str = "bg: job-id ";
-    str += job_id;
+    str += to_string(job_id);
     str += " does not exist";
     printError(str);
 }
@@ -894,7 +894,7 @@ void BackgroundCommand::printNoJobsError() {
 }
 void BackgroundCommand::printNotStoppedError(JobID job_id) {
     string str = "bg: job-id ";
-    str += job_id;
+    str += to_string(job_id);
     str += " is already running in the background";
     printError(str);
 }
