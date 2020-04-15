@@ -135,6 +135,7 @@ void JobsList::killAllJobs() {
         if (gpid < 0) perror("smash error: getgpid failed");
         if (killpg(gpid, SIGKILL) < 0) perror("smash error: killpg failed");
         if (waitpid(job.second.pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
+                                                                        // todo: add wait for other group children also
     }
 }
 void JobsList::removeFinishedJobs() {
@@ -428,6 +429,105 @@ void RedirectionCommand::execute() {
         perror("smash error: fork failed");
     }
 }
+
+TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
+                                                                                shell(shell),
+                                                                                    to_append(false),
+                                                                                    to_background(false),
+                                                                                    cmd_is_fg(false) {
+    // find split place
+    int split_place = original_cmd.find_first_of(">");;
+
+    // check if need to append
+    if (cmd_line[split_place+1] == '>') to_append = true;
+
+    // save command part
+    cmd_part = _trim(original_cmd.substr(0, split_place));
+
+    // and file address part
+    if (to_append) split_place++;
+    pathname = _trim(original_cmd.substr(split_place+1));
+
+    // move ampersand from pathname to cmd_part if there is one
+    if (checkAndRemoveAmpersand(pathname)) to_background = true;
+
+    // check if cmd is fg
+    if (cmd_part.find("fg ") == 0) cmd_is_fg = true;
+}
+void TimeoutCommand::execute() {
+
+    // open file, if to_append is true open in append mode
+    int flags = O_CREAT | O_WRONLY;
+    if (to_append) flags |= O_APPEND;
+    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
+    int file_fd = open(pathname.c_str(), flags, mode);
+    if (file_fd < 0) { // can't continue
+        perror("smash error: open failed");
+        return;
+    }
+
+    if (cmd_is_fg) {
+        auto stdout_fd = dup(STDOUT);
+        if (stdout_fd < 0) { // can't continue
+            perror("smash error: dup failed");
+            if (close(file_fd) < 0) perror("smash error: close failed");
+            return;
+        }
+        if (dup2(file_fd, STDOUT) < 0) {
+            perror("smash error: dup2 failed");
+            if (close(stdout_fd) < 0) perror("smash error: close failed");
+            if (close(file_fd) < 0) perror("smash error: close failed");
+            return;
+        }
+
+        shell->executeCommand(cmd_part.c_str());
+
+        if (dup2(stdout_fd, STDOUT) < 0) perror("smash error: dup2 failed");
+        if (close(stdout_fd) < 0) perror("smash error: close failed");
+        if (close(file_fd) < 0) perror("smash error: close failed");
+        return;
+    }
+
+    pid_t pid = fork();
+
+    if (pid == 0) { // child
+        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
+
+        // put file descriptor in STDOUT place
+        if (dup2(file_fd, STDOUT) < 0) {  // can't continue
+            perror("smash error: dup2 failed");
+            if (close(file_fd) < 0) perror("smash error: close failed");
+            exit(0);
+        }
+
+        shell->executeCommand(cmd_part.c_str());
+
+        if (close(file_fd) < 0) perror("smash error: close failed");
+        exit(0);
+
+    } else if (pid > 0) { // parent
+        if (isChild(pid)) return;
+
+        // if with "&" add to JOBS LIST and return
+        if (to_background) {
+            shell->addJob(pid, original_cmd);
+        } else {
+            // wait for job
+            // add to jobs list if stopped
+            CURR_FORK_CHILD_RUNNING = pid;
+            int status;
+            if (waitpid(pid, &status, WUNTRACED) < 0) {
+                perror("smash error: waitpid failed");
+            } else {
+                if (WIFSTOPPED(status)) shell->addJob(pid, original_cmd, true);
+            }
+            CURR_FORK_CHILD_RUNNING = 0;
+        }
+    } else {
+        perror("smash error: fork failed");
+    }
+}
+
 
 //---------------------------EXTERNAL CLASS------------------------------
 ExternalCommand::ExternalCommand(const char* cmd_line, JobsList* jobs) :    Command(cmd_line),
@@ -965,6 +1065,8 @@ Command* SmallShell::CreateCommand(const char* cmd_line) {
     } else if (cmd_s.compare("quit") == 0 || cmd_s.compare("quit&") == 0 || cmd_s.find("quit ") == 0) {
         return new QuitCommand(cmd_line, this->jobs);
     } else if (cmd_s.compare("cp") == 0 || cmd_s.compare("cp&") == 0 || cmd_s.find("cp ") == 0) {
+        return new CopyCommand(cmd_line, this->jobs);
+    } else if (cmd_s.compare("timeout") == 0 || cmd_s.compare("timeout&") == 0 || cmd_s.find("timeout ") == 0) {
         return new CopyCommand(cmd_line, this->jobs);
     } else {
         return new ExternalCommand(cmd_line, this->jobs);

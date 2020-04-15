@@ -107,6 +107,16 @@ public:
     void execute() override;
 };
 
+class TimeoutCommand : public Command {
+    SmallShell* shell;
+    string cmd_part;
+    int duration;
+public:
+    TimeoutCommand(const char* cmd_line, SmallShell* shell);
+    virtual ~TimeoutCommand() = default;
+    void execute() override;
+};
+
 //---------------------------EXTERNAL CLASS------------------------------
 
 class ExternalCommand : public Command {
