@@ -718,13 +718,20 @@ bool KillCommand::parseAndCheck(const char* cmd_line, int* sig, JobID* j_id) {
     return true;
 }
 void KillCommand::printArgumentsError() {
-    cout << "smash error: kill: invalid arguments" << endl;
+    printError("kill: invalid arguments");
 }
 void KillCommand::printJobError() {
-    cout << "smash error: kill: job-id " << job_id << " does not exist" << endl;
+    string str = "kill: job-id ";
+    str += job_id;
+    str += " does not exist";
+    printError(str);
 }
 void KillCommand::printSignalSent(int sig, pid_t p) {
-    cout << "signal number " << sig << " was sent to pid " << p << endl;
+    string str = "signal number ";
+    str += sig;
+    str += " was sent to pid ";
+    str += (int)p;
+    printError(str);
 }
 
 ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
@@ -801,13 +808,16 @@ void ForegroundCommand::execute() {
     CURR_FORK_CHILD_RUNNING = 0;
 }
 void ForegroundCommand::printArgumentsError() {
-    cout << "smash error: fg: invalid arguments" << endl;
+    printError("fg: invalid arguments");
 }
 void ForegroundCommand::printJobError(JobID job_id) {
-    cout << "smash error: fg: job-id " << job_id << " does not exist" << endl;
+    string str = "fg: job-id ";
+    str += job_id;
+    str += " does not exist";
+    printError(str);
 }
 void ForegroundCommand::printNoJobsError() {
-    cout << "smash error: fg: jobs list is empty" << endl;
+    printError("fg: jobs list is empty");
 }
 
 BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
@@ -871,16 +881,22 @@ void BackgroundCommand::execute() {
     }
 }
 void BackgroundCommand::printArgumentsError() {
-    cout << "smash error: b g: invalid arguments" << endl;
+    printError("bg: invalid arguments");
 }
 void BackgroundCommand::printJobError(JobID job_id) {
-    cout << "smash error: bg: job-id " << job_id << " does not exist" << endl;
+    string str = "bg: job-id ";
+    str += job_id;
+    str += " does not exist";
+    printError(str);
 }
 void BackgroundCommand::printNoJobsError() {
-    cout << "smash error: bg: there is no stopped jobs to resume" << endl;
+    printError("bg: there is no stopped jobs to resume");
 }
 void BackgroundCommand::printNotStoppedError(JobID job_id) {
-    cout << "smash error: bg: job-id " << job_id << " is already running in the background" << endl;
+    string str = "bg: job-id ";
+    str += job_id;
+    str += " is already running in the background";
+    printError(str);
 }
 
 bool parseAndCheckFgBgCommands(const char* cmd_line, JobID* job_id) {
