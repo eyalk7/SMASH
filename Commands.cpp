@@ -219,7 +219,7 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
 }
 void PipeCommand::execute() {
     // if first command fg, just call fg
-    if (command1.find("fg ")) {
+    if (command1.find("fg ") == 0) {
         shell->executeCommand(command1.c_str());
         return;
     }
@@ -265,10 +265,11 @@ void PipeCommand::execute() {
         return;
     }
 
+    if (isChild(pid)) return;
+
     if (background) {
         shell->addJob(pid, original_cmd);
     } else {
-        if (isChild(pid)) return;
 
         // wait for child to finish
         // add to jobs list if stopped
@@ -351,7 +352,7 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
     if (checkAndRemoveAmpersand(pathname)) to_background = true;
 
     // check if cmd is fg
-    if (cmd_part.find("fg ")) cmd_is_fg = true;
+    if (cmd_part.find("fg ") == 0) cmd_is_fg = true;
 }
 void RedirectionCommand::execute() {
 
@@ -405,12 +406,12 @@ void RedirectionCommand::execute() {
         exit(0);
 
     } else if (pid > 0) { // parent
+        if (isChild(pid)) return;
+
         // if with "&" add to JOBS LIST and return
         if (to_background) {
             shell->addJob(pid, original_cmd);
         } else {
-            if (isChild(pid)) return;
-
             // wait for job
             // add to jobs list if stopped
             CURR_FORK_CHILD_RUNNING = pid;
@@ -448,12 +449,11 @@ void ExternalCommand::execute() {
         exit(0);    // child finished (if execl failed)
     }
     else if (pid > 0) { //parent
+        if (isChild(pid)) return;
         // if with "&" add to JOBS LIST and return
         if (to_background) {
             jobs->addJob(pid, original_cmd);
         } else {
-            if (isChild(pid)) return;
-
             // wait for job
             // add to jobs list if stopped
             CURR_FORK_CHILD_RUNNING = pid;
@@ -703,15 +703,6 @@ void ForegroundCommand::execute() {
         return;
     }
 
-    //if (isChild(pid)) return;
-    if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
-        while (kill(pid, 0) == 0) { // continued process still running
-            pause();
-        }
-        return;
-    }
-
-
     // wait for job
     // nullify start time if stopped again
     CURR_FORK_CHILD_RUNNING = pid;
@@ -917,10 +908,11 @@ void CopyCommand::execute() {
 
     if (pid < 1) return;    // fork failed, parent process returns
 
+    if (isChild(pid)) return;
+
     if (background)     // run in background
         jobs->addJob(pid, original_cmd);
     else {              // run in foreground
-        if (isChild(pid)) return;
 
         int status;
         CURR_FORK_CHILD_RUNNING = pid;
