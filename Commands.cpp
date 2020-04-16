@@ -775,7 +775,7 @@ void KillCommand::printSignalSent() {
     str += to_string(signum);
     str += " was sent to pid ";
     str += to_string((int)p);
-    std::cout << str << std:;endl;
+    std::cout << str << std::endl;
 }
 
 ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
@@ -875,7 +875,7 @@ BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : Bui
     } else {
         job_entry = jobs->getJobById(job_id);
         if (!job_entry) {
-            printJobError(job_id);
+            printJobError();
             job_id = -1;
             return;
         }
@@ -924,7 +924,7 @@ void BackgroundCommand::printJobError() {
     printError(str);
 }
 
-void BackgroundCommand::printNotStoppedError(JobID job_id) {
+void BackgroundCommand::printNotStoppedError() {
     string str = "bg: job-id ";
     str += to_string(job_id);
     str += " is already running in the background";

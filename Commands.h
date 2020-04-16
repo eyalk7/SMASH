@@ -245,8 +245,8 @@ public:
     void execute() override;
 
 private:
-    void printJobError(JobID job_id);
-    void printNotStoppedError(JobID job_id);
+    void printJobError();
+    void printNotStoppedError();
 };
 
 // parsing function for background and foreground commands
