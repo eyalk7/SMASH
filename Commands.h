@@ -47,15 +47,16 @@ extern bool QUIT_SHELL;                 // True = quit was sent
 
 //---------------------------JOBS LISTS------------------------------
 struct JobEntry {
-    explicit JobEntry(pid_t pid = 0, const string& cmd_str = "",
-                      bool is_stopped = false, bool is_timeout = false,
-                      unsigned int time_limit = 0);
     pid_t pid;
     string cmd_str;
     bool is_stopped;        //  is the job stopped
     bool is_timeout;        // is this a timeout command
     unsigned int time_limit;  // relevant if this is a timeout command
     time_t start_time;
+
+    explicit JobEntry(pid_t pid = 0, const string& cmd_str = "",
+                      bool is_stopped = false, bool is_timeout = false,
+                      unsigned int time_limit = 0);
 };
 typedef int JobID;
 
@@ -67,6 +68,7 @@ public:
     ~JobsList() = default;
     JobEntry* addJob(pid_t pid, const string& cmd_str, bool is_stopped = false,
                      bool is_timeout = false, unsigned int time_limit = 0);
+
     void printJobsList();
     void killAllJobs();
     void removeFinishedJobs();
@@ -81,6 +83,7 @@ public:
 class Command {
 protected:
     string original_cmd;
+
 public:
     explicit Command(const char* cmd_line) : original_cmd(cmd_line) {};
     virtual ~Command() = default;
@@ -94,10 +97,12 @@ class PipeCommand : public Command {
     SmallShell* shell;
     bool has_ampersand, background;
     string command1, command2;
+
 public:
     PipeCommand(const char* cmd_line, SmallShell* shell);
     virtual ~PipeCommand() = default;
     void execute() override;
+
 private:
     /// A function that forks two children and sets their write/read
     /// to the ends of the given pipe accordingly.
@@ -115,6 +120,7 @@ class RedirectionCommand : public Command {
     bool cmd_is_fg;     // fg command is a special
     string cmd_part;
     string pathname;
+
 public:
     RedirectionCommand(const char* cmd_line, SmallShell* shell);
     virtual ~RedirectionCommand() = default;
@@ -126,6 +132,7 @@ class TimeoutCommand : public Command {
     bool to_background;
     string cmd_part;
     int duration;
+
 public:
     TimeoutCommand(const char* cmd_line, SmallShell* shell);
     virtual ~TimeoutCommand() = default;
@@ -138,6 +145,7 @@ class ExternalCommand : public Command {
     string cmd_to_son;
     JobsList* jobs;
     bool to_background;
+
 public:
     ExternalCommand(const char* cmd_line, JobsList* jobs);
     virtual ~ExternalCommand() = default;
@@ -156,6 +164,7 @@ public:
 class ChangePromptCommand : public BuiltInCommand {
     SmallShell* shell;
     string prompt;
+
 public:
     ChangePromptCommand(const char* cmd_line, SmallShell* shell);
     virtual ~ChangePromptCommand() = default;
@@ -180,6 +189,7 @@ public:
 class ChangeDirCommand : public BuiltInCommand {
     string* old_pwd;
     string new_path;
+
 public:
     ChangeDirCommand(const char* cmd_line, string* last_dir);
     virtual ~ChangeDirCommand() = default;
@@ -188,6 +198,7 @@ public:
 
 class JobsCommand : public BuiltInCommand {
     JobsList* jobs;
+
 public:
     JobsCommand(const char* cmd_line, JobsList* jobs);
     virtual ~JobsCommand() = default;
@@ -198,6 +209,7 @@ class KillCommand : public BuiltInCommand {
     JobsList* jobs;
     int signum, job_id;
     JobEntry* job_entry;
+
     bool parseAndCheck(const char* cmd_line, int* signum, JobID* job_id);
     void printJobError();
     void printSignalSent();
@@ -212,24 +224,29 @@ class ForegroundCommand : public BuiltInCommand {
     int job_id;
     JobsList* jobs;
     JobEntry* job_entry;
-    void printJobError(JobID job_id);
+
 public:
     ForegroundCommand(const char* cmd_line, JobsList* jobs);
     virtual ~ForegroundCommand() = default;
     void execute() override;
+
+private:
+    void printJobError();
 };
 
 class BackgroundCommand : public BuiltInCommand {
     int job_id;
     JobsList* jobs;
-    void printArgumentsError();
-    void printJobError(JobID job_id);
-    void printNoJobsError();
-    void printNotStoppedError(JobID job_id);
+    JobEntry* job_entry;
+
 public:
     BackgroundCommand(const char* cmd_line, JobsList* jobs);
     virtual ~BackgroundCommand() = default;
     void execute() override;
+
+private:
+    void printJobError(JobID job_id);
+    void printNotStoppedError(JobID job_id);
 };
 
 // parsing function for background and foreground commands
@@ -238,6 +255,7 @@ bool parseAndCheckFgBgCommands(const char* cmd_line, JobID* job_id);
 class QuitCommand : public BuiltInCommand {
     bool kill_all;
     JobsList* jobs;
+
 public:
     QuitCommand(const char* cmd_line, JobsList* jobs);
     virtual ~QuitCommand() = default;
@@ -248,6 +266,7 @@ class CopyCommand : public BuiltInCommand {
     string old_path, new_path;
     bool background;
     JobsList* jobs;
+
 public:
     explicit CopyCommand(const char* cmd_line, JobsList* jobs);
     virtual ~CopyCommand() = default;
@@ -257,27 +276,29 @@ public:
 //---------------------------SMALL SHELL--------------------------------
 
 class SmallShell {
- private:
-  string prompt;
-  string old_pwd;
-  JobsList* jobs;
- public:
-  SmallShell();
-  Command* CreateCommand(const char* cmd_line);
-  SmallShell(SmallShell const&)      = delete; // disable copy ctor
-  void operator=(SmallShell const&)  = delete; // disable = operator
-  ~SmallShell();
-  static SmallShell& getInstance() // make SmallShell singleton
-  {
-    static SmallShell instance; // Guaranteed to be destroyed.
-    // Instantiated on first use.
-    return instance;
-  }
-  void executeCommand(const char* cmd_line);
-  void changePrompt(const string& prompt);
-  const string& getPrompt();
-  JobEntry* addJob(pid_t pid, const string& str, bool is_stopped = false, bool is_timeout = false, unsigned int time_limit = 0);
-  void updateJobs();
+private:
+    string prompt;
+    string old_pwd;
+    JobsList *jobs;
+
+public:
+    SmallShell();
+    Command *CreateCommand(const char *cmd_line);
+    SmallShell(SmallShell const &) = delete; // disable copy ctor
+    void operator=(SmallShell const &) = delete; // disable = operator
+    ~SmallShell();
+    static SmallShell &getInstance() // make SmallShell singleton
+    {
+        static SmallShell instance; // Guaranteed to be destroyed.
+        // Instantiated on first use.
+        return instance;
+    }
+
+    void executeCommand(const char *cmd_line);
+    void changePrompt(const string &prompt);
+    const string &getPrompt();
+    JobEntry* addJob(pid_t pid, const string &str, bool is_stopped = false, bool is_timeout = false, unsigned int time_limit = 0);
+    void updateJobs();
 };
 
 #endif //SMASH_COMMAND_H_

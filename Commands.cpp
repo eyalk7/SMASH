@@ -795,15 +795,15 @@ ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    
     } else {
         job_entry = jobs->getJobById(job_id);
         if (!job_entry) {
-            printJobError(job_id);
+            printJobError();
             job_id = -1;
         }
     }
 }
 void ForegroundCommand::execute() {
     if (job_id < 0) return; // error in arguments or job not exist
-    if (!job_entry) {
-        // jobs list is empty
+
+    if (!job_entry) { // no arguments given + jobs list is empty
         printError("fg: jobs list is empty");
         return;
     }
@@ -852,7 +852,7 @@ void ForegroundCommand::execute() {
     CURR_FORK_CHILD_RUNNING = 0;
 }
 
-void ForegroundCommand::printJobError(JobID job_id) {
+void ForegroundCommand::printJobError() {
     string str = "fg: job-id ";
     str += to_string(job_id);
     str += " does not exist";
@@ -861,76 +861,69 @@ void ForegroundCommand::printJobError(JobID job_id) {
 
 BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
                                                                              job_id(0),
-                                                                             jobs(jobs) {
+                                                                             jobs(jobs),
+                                                                             job_entry(nullptr) {
     // if num of argument not valid or syntax problem print error
     if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
-        printArgumentsError();
+        printError("bg: invalid arguments");
         job_id = -1;
         return;
     }
 
-    if (job_id == 0) return; // no arguments, get last job
-
-    auto job_entry = jobs->getJobById(job_id);
-    if (!job_entry) {
-        printJobError(job_id);
-        job_id = -1;
-        return;
-    }
-    if (!job_entry->is_stopped) {
-        printNotStoppedError(job_id);
-        job_id = -1;
-        return;
+    if (job_id == 0) { // no arguments, get last job
+        job_entry = jobs->getLastStoppedJob(&job_id);
+    } else {
+        job_entry = jobs->getJobById(job_id);
+        if (!job_entry) {
+            printJobError(job_id);
+            job_id = -1;
+            return;
+        }
+        if (!job_entry->is_stopped) {
+            printNotStoppedError();
+            job_id = -1;
+            return;
+        }
     }
 }
 void BackgroundCommand::execute() {
     if (job_id < 0) return; // error in arguments or job not exist
 
-    JobEntry* job = nullptr;
-    // if job_id == 0 than get the last job
-    // if jobs list empty print error
-    if (job_id == 0) {
-        job = jobs->getLastStoppedJob(&job_id);
-        if (!job) {
-            printNoJobsError();
-            return;
-        }
-    } else {
-        job = jobs->getJobById(job_id);
+    if (!job_entry) {   // no arguments given + no stopped jobs to resume
+        printError("bg: there is no stopped jobs to resume");
+        return;
     }
 
     // print job's command line
-    cout << job->cmd_str << " : " << job->pid << endl;
+    cout << job_entry->cmd_str << " : " << job_entry->pid << endl;
 
     // send SIGCONT to job's pid
     // update is_stopped
 
-    pid_t gpid = getpgid(job->pid);
+    pid_t gpid = getpgid(job_entry->pid);
     if (gpid < 0) {
         perror("smash error: getgpid failed");
         return;
     }
 
     // send signal, print message
-    if (killpg(gpid, SIGCONT) < 0) { // can't continue
+    if (killpg(gpid, SIGCONT) < 0) {
+        // can't continue
         perror("smash error: killpg failed");
         return;
     } else {
-        job->is_stopped = false;
+        // update 'stopped' status
+        job_entry->is_stopped = false;
     }
 }
-void BackgroundCommand::printArgumentsError() {
-    printError("bg: invalid arguments");
-}
-void BackgroundCommand::printJobError(JobID job_id) {
+
+void BackgroundCommand::printJobError() {
     string str = "bg: job-id ";
     str += to_string(job_id);
     str += " does not exist";
     printError(str);
 }
-void BackgroundCommand::printNoJobsError() {
-    printError("bg: there is no stopped jobs to resume");
-}
+
 void BackgroundCommand::printNotStoppedError(JobID job_id) {
     string str = "bg: job-id ";
     str += to_string(job_id);
