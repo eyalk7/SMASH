@@ -61,6 +61,8 @@ typedef int JobID;
 
 class JobsList {
 public:
+    map<JobID,JobEntry> jobs;
+
     JobsList() = default;
     ~JobsList() = default;
     JobEntry* addJob(pid_t pid, const string& cmd_str, bool is_stopped = false,
@@ -72,8 +74,6 @@ public:
     void removeJobById(JobID jobId);
     JobEntry* getLastJob(JobID* lastJobId);
     JobEntry* getLastStoppedJob(JobID* jobId);
-
-    map<JobID,JobEntry> jobs;
 };
 
 //-------------------------ABSTRACT COMMAND------------------------
@@ -104,11 +104,11 @@ private:
 
 class RedirectionCommand : public Command {
     SmallShell* shell;
-    string cmd_part;
-    string pathname;
     bool to_append;
     bool to_background;
     bool cmd_is_fg;
+    string cmd_part;
+    string pathname;
 public:
     RedirectionCommand(const char* cmd_line, SmallShell* shell);
     virtual ~RedirectionCommand() = default;

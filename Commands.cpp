@@ -166,12 +166,14 @@ void JobsList::removeFinishedJobs() {
     vector<JobID> to_remove(100,0);
     int to_remove_iter= 0;
 
-    // iterate on map, and waitpid with each pid WNOHANG flag
+    // iterate on map looking for finished jobs
     for (const auto& job : jobs) {
         if (job.second.pid == 0) {
             to_remove[to_remove_iter++] = job.first;
             continue;
         }
+
+        // check if job finished using waitpid with WNOHANG
         pid_t waited = waitpid(job.second.pid, nullptr, WNOHANG);
         if (waited < 0) perror("smash error: waitpid failed");
         if (waited > 0) to_remove[to_remove_iter++] = job.first;
@@ -186,15 +188,16 @@ JobEntry* JobsList::getJobById(JobID jobId) {
     // remove zombies from jobs list
     removeFinishedJobs();
 
-    if (jobs.count(jobId) == 0) return nullptr;
+    if (jobs.contains(jobID)) return nullptr;
+
     // return from map
     return &jobs[jobId];
 }
 void JobsList::removeJobById(JobID jobId) {
-    if (jobs.count(jobId) > 0) {
-        jobs.erase(jobId);
-    }
+    // if not exist nothing happens
+    jobs.erase(jobId);
 }
+
 JobEntry* JobsList::getLastJob(JobID* lastJobId) {
     // remove zombies from jobs list
     removeFinishedJobs();
@@ -230,7 +233,7 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
     int pipe_index = command.find_first_of("|");
 
     command1 = _trim(command.substr(0, pipe_index));
-    checkAndRemoveAmpersand(command1);
+    checkAndRemoveAmpersand(command1); // don't run inner command in background
 
     if (cmd_line[pipe_index + 1] == '&') {
         has_ampersand = true;
@@ -238,10 +241,15 @@ PipeCommand::PipeCommand(const char* cmd_line, SmallShell* shell) : Command(cmd_
     }
 
     command2 = _trim(command.substr(pipe_index+1, command.length() - pipe_index - 1));
-    if (checkAndRemoveAmpersand(command2)) background = true;
+    if (checkAndRemoveAmpersand(command2)) background = true;   // check for & at the end
 
     // if the first command is jobs, update jobs because child can't
     if (command1.compare("jobs") == 0 || command1.find("jobs ") == 0) {
+        shell->updateJobs();
+    }
+
+    // if the second command is jobs, update jobs because child can't
+    if (command2.compare("jobs") == 0 || command2.find("jobs ") == 0) {
         shell->updateJobs();
     }
 }
@@ -271,18 +279,14 @@ void PipeCommand::execute() {
         if (close(my_pipe[1]) == -1) perror("smash error: close failed");
 
         if (!success) {
-            // kill this process and it's children
-            pid_t gpid = getpgid(CURR_FORK_CHILD_RUNNING); //todo: dangerous to use global variable here
+            pid_t gpid = getpgrp();
             if (gpid < 0) {
-                perror("smash error: getgpid failed");
+                perror("smash error: getpgrp failed");
                 exit(0);
             }
-
-            if (killpg(gpid, SIGINT) < 0) {
-                perror("smash error: killpg failed");
-                exit(0);
-            }
-            // exit(0); - if killpg suceeded then this process dies too
+            // kill this process and it's children
+            if (killpg(gpid, SIGINT) < 0) perror("smash error: killpg failed");
+            exit(0);
         }
 
         if (waitpid(pid1, nullptr, 0) < 0) perror("smash error: waitpid failed");
@@ -295,17 +299,16 @@ void PipeCommand::execute() {
 
     if (childWait(pid)) return;
 
-    if (background) {
+    if (background) {   // run in background
         shell->addJob(pid, original_cmd);
-    } else {
-
-        // wait for child to finish
-        // add to jobs list if stopped
+    } else {            // run in foreground
         CURR_FORK_CHILD_RUNNING = pid;
         int status;
+        // wait for child to finish
         if (waitpid(pid, &status, WUNTRACED) < 0) {
             perror("smash error: waitpid failed");
         } else {
+            // add to jobs list if stopped
             if (WIFSTOPPED(status)) shell->addJob(pid, original_cmd, true);
         }
         CURR_FORK_CHILD_RUNNING = 0;
@@ -364,7 +367,7 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
                                                                                     to_background(false),
                                                                                     cmd_is_fg(false) {
     // find split place
-    int split_place = original_cmd.find_first_of(">");;
+    int split_place = original_cmd.find_first_of(">");
 
     // check if need to append
     if (cmd_line[split_place+1] == '>') to_append = true;
@@ -380,7 +383,7 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
     if (checkAndRemoveAmpersand(pathname)) to_background = true;
 
     // check if cmd is fg
-    if (cmd_part.find("fg ") == 0) cmd_is_fg = true;
+    if (cmd_part.find("fg ") == 0 || cmd_part.compare("fg") == 0) cmd_is_fg = true;
 }
 void RedirectionCommand::execute() {
 
@@ -395,21 +398,25 @@ void RedirectionCommand::execute() {
     }
 
     if (cmd_is_fg) {
+        // save old stdout
         auto stdout_fd = dup(STDOUT);
-        if (stdout_fd < 0) { // can't continue
+        if (stdout_fd < 0) { // dup error - can't continue
             perror("smash error: dup failed");
             if (close(file_fd) < 0) perror("smash error: close failed");
             return;
         }
-        if (dup2(file_fd, STDOUT) < 0) {
+        // change stdout to given FD
+        if (dup2(file_fd, STDOUT) < 0) { // dup2 error - can't continue
             perror("smash error: dup2 failed");
             if (close(stdout_fd) < 0) perror("smash error: close failed");
             if (close(file_fd) < 0) perror("smash error: close failed");
             return;
         }
 
+        // execute the fg command
         shell->executeCommand(cmd_part.c_str());
 
+        // revert stdout back to old stdout
         if (dup2(stdout_fd, STDOUT) < 0) perror("smash error: dup2 failed");
         if (close(stdout_fd) < 0) perror("smash error: close failed");
         if (close(file_fd) < 0) perror("smash error: close failed");
@@ -422,7 +429,7 @@ void RedirectionCommand::execute() {
         if (isSmashChild()) setpgrp();  // make sure that the child get different GROUP ID
 
         // put file descriptor in STDOUT place
-        if (dup2(file_fd, STDOUT) < 0) {  // can't continue
+        if (dup2(file_fd, STDOUT) < 0) {  // dup2 error - can't continue
             perror("smash error: dup2 failed");
             if (close(file_fd) < 0) perror("smash error: close failed");
             exit(0);
@@ -436,17 +443,18 @@ void RedirectionCommand::execute() {
     } else if (pid > 0) { // parent
         if (childWait(pid)) return;
 
-        // if with "&" add to JOBS LIST and return
-        if (to_background) {
+        if (to_background) {    // run in background
+            // if with "&" add to JOBS LIST and return
             shell->addJob(pid, original_cmd);
-        } else {
-            // wait for job
-            // add to jobs list if stopped
+        } else {                // run in foreground
             CURR_FORK_CHILD_RUNNING = pid;
             int status;
+
+            // wait for job
             if (waitpid(pid, &status, WUNTRACED) < 0) {
                 perror("smash error: waitpid failed");
             } else {
+                // add to jobs list if stopped
                 if (WIFSTOPPED(status)) shell->addJob(pid, original_cmd, true);
             }
             CURR_FORK_CHILD_RUNNING = 0;
