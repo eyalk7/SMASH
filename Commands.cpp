@@ -158,6 +158,8 @@ void JobsList::killAllJobs() {
             }
         }
         job.second.pid = 0;
+
+        // todo: piazza question
     }
 }
 void JobsList::removeFinishedJobs() {
@@ -466,7 +468,8 @@ void RedirectionCommand::execute() {
 
 TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
                                                                             shell(shell),
-                                                                            to_background (false){
+                                                                            to_background (false),
+                                                                            cmd_part(""), duration(0) {
     if (!isSmash()) return;
 
     //parsing
@@ -478,14 +481,23 @@ TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Comm
         for (int digit = 0; args[1][digit]; digit++) {
             if (!isdigit(args[1][digit])) is_num = false;
         }
-        if (is_num) duration = stoi(args[1]);
+
+        if (is_num) {
+            duration = stoi(args[1]);
+        }
+        else {
+            // todo: piazza question
+            //printError("timeout: invalid duration");
+            return;
+        }
+
         for (int i = 2; i < num_of_args; i++) {
             cmd_part += string(args[i]);
             cmd_part += " ";
         }
     }
     for (int i = 0; i < num_of_args; i++) free(args[i]);
-    if (num_of_args < 3) return; // too few arguments
+    if (num_of_args < 3) return; // too few arguments // todo: piazza question
 
     // remove ampersand and check to background
     to_background = checkAndRemoveAmpersand(cmd_part);

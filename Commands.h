@@ -99,14 +99,20 @@ public:
     virtual ~PipeCommand() = default;
     void execute() override;
 private:
+    /// A function that forks two children and sets their write/read
+    /// to the ends of the given pipe accordingly.
+    /// \param my_pipe - The pipe that both children have to use to communicate
+    /// \param pid1 - Pointer to the first child's PID
+    /// \param pid2 - Pointer to the second child's PID
+    /// \return False if one of the fork()s failed, else True
     bool Pipe(int my_pipe[], pid_t* pid1, pid_t* pid2);
 };
 
 class RedirectionCommand : public Command {
     SmallShell* shell;
-    bool to_append;
+    bool to_append;     // true if ">>"
     bool to_background;
-    bool cmd_is_fg;
+    bool cmd_is_fg;     // fg command is a special
     string cmd_part;
     string pathname;
 public:
@@ -117,9 +123,9 @@ public:
 
 class TimeoutCommand : public Command {
     SmallShell* shell;
+    bool to_background;
     string cmd_part;
     int duration;
-    bool to_background;
 public:
     TimeoutCommand(const char* cmd_line, SmallShell* shell);
     virtual ~TimeoutCommand() = default;
