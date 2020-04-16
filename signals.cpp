@@ -63,7 +63,7 @@ void alarmHandler(int sig_num) {
         if (!job.second.is_timeout || job.second.pid == 0) continue;
 
         auto diff_time = difftime(curr_time, job.second.start_time);
-        if (job.second.duration <= (unsigned int)diff_time) {
+        if (job.second.time_limit <= (unsigned int)diff_time) {
             wakeUpCall(job.second.pid, job.second.cmd_str);
             signal_sent = true;
         }

@@ -39,21 +39,23 @@ class JobsList;
 class SmallShell;
 
 // declaration of global variables
-extern pid_t CURR_FORK_CHILD_RUNNING;
-extern pid_t SMASH_PROCESS_PID;
-extern JobsList* GLOBAL_JOBS_POINTER;
-extern bool QUIT_SHELL;
+extern pid_t CURR_FORK_CHILD_RUNNING;   // PID of the process currently in the foreground
+extern pid_t SMASH_PROCESS_PID;         // PID of the SMASH process
+extern JobsList* GLOBAL_JOBS_POINTER;   // pointer to the Jobs list in SmallSHell
+extern bool QUIT_SHELL;                 // True = quit was sent
 
 
 //---------------------------JOBS LISTS------------------------------
 struct JobEntry {
-    explicit JobEntry(pid_t pid = 0, const string& cmd_str = "", bool is_stopped = false, bool is_timeout = false, unsigned int duration = 0);
+    explicit JobEntry(pid_t pid = 0, const string& cmd_str = "",
+                      bool is_stopped = false, bool is_timeout = false,
+                      unsigned int time_limit = 0);
     pid_t pid;
     string cmd_str;
-    bool is_stopped;
+    bool is_stopped;        //  is the job stopped
+    bool is_timeout;        // is this a timeout command
+    unsigned int time_limit;  // relevant if this is a timeout command
     time_t start_time;
-    bool is_timeout;
-    unsigned int duration;
 };
 typedef int JobID;
 
@@ -61,7 +63,8 @@ class JobsList {
 public:
     JobsList() = default;
     ~JobsList() = default;
-    JobEntry* addJob(pid_t pid, const string& cmd_str, bool is_stopped = false, bool is_timeout = false, unsigned int duration = 0);
+    JobEntry* addJob(pid_t pid, const string& cmd_str, bool is_stopped = false,
+                     bool is_timeout = false, unsigned int time_limit = 0);
     void printJobsList();
     void killAllJobs();
     void removeFinishedJobs();
@@ -268,7 +271,7 @@ class SmallShell {
   void executeCommand(const char* cmd_line);
   void changePrompt(const string& prompt);
   const string& getPrompt();
-  JobEntry* addJob(pid_t pid, const string& str, bool is_stopped = false, bool is_timeout = false, unsigned int duration = 0);
+  JobEntry* addJob(pid_t pid, const string& str, bool is_stopped = false, bool is_timeout = false, unsigned int time_limit = 0);
   void updateJobs();
 };
 

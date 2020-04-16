@@ -1,6 +1,7 @@
 #include "Commands.h"
 #include "signals.h"
 
+// definition of global variables
 pid_t SMASH_PROCESS_PID = 0;
 bool QUIT_SHELL = false;
 

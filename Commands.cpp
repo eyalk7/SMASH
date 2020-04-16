@@ -26,33 +26,30 @@ const std::string WHITESPACE = " \n\r\t\f\v";
 #define EXEC(path, arg) \
   execvp((path), (arg));
 
-string _ltrim(const std::string& s)
-{
-  size_t start = s.find_first_not_of(WHITESPACE);
-  return (start == std::string::npos) ? "" : s.substr(start);
+string _ltrim(const std::string& s) {
+    size_t start = s.find_first_not_of(WHITESPACE);
+    return (start == std::string::npos) ? "" : s.substr(start);
 }
-string _rtrim(const std::string& s)
-{
-  size_t end = s.find_last_not_of(WHITESPACE);
-  return (end == std::string::npos) ? "" : s.substr(0, end + 1);
+string _rtrim(const std::string& s) {
+    size_t end = s.find_last_not_of(WHITESPACE);
+    return (end == std::string::npos) ? "" : s.substr(0, end + 1);
 }
-string _trim(const std::string& s)
-{
-  return _rtrim(_ltrim(s));
+string _trim(const std::string& s) {
+    return _rtrim(_ltrim(s));
 }
 int _parseCommandLine(const char* cmd_line, char** args) {
-  FUNC_ENTRY()
-  int i = 0;
-  std::istringstream iss(_trim(string(cmd_line)).c_str());
-  for(std::string s; iss >> s; ) {
-    args[i] = (char*)malloc(s.length()+1);
-    memset(args[i], 0, s.length()+1);
-    strcpy(args[i], s.c_str());
-    args[++i] = nullptr;
-  }
-  return i;
+    FUNC_ENTRY()
+    int i = 0;
+    std::istringstream iss(_trim(string(cmd_line)).c_str());
+    for (std::string s; iss >> s;) {
+        args[i] = (char *) malloc(s.length() + 1);
+        memset(args[i], 0, s.length() + 1);
+        strcpy(args[i], s.c_str());
+        args[++i] = nullptr;
+    }
+    return i;
 
-  FUNC_EXIT()
+    FUNC_EXIT()
 }
 
 //----------------------------OUR CODE-------------------------------------------
@@ -90,21 +87,20 @@ void printError(const string& msg) {
 }
 
 //---------------------------JOBS LISTS------------------------------
-JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped, bool is_timeout, unsigned int duration) : pid(pid),
+JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped, bool is_timeout, unsigned int time_limit) : pid(pid),
                                                                                                                 cmd_str(cmd_str),
                                                                                                                 is_stopped(is_stopped),
                                                                                                                 is_timeout(is_timeout),
-                                                                                                                duration(duration) {
+                                                                                                                time_limit(time_limit) {
     start_time = time(nullptr);
     if (start_time == (time_t)(-1)) perror("smash error: time failed");
-
 }
-JobEntry* JobsList::addJob(pid_t pid, const string& cmd_str, bool is_stopped, bool is_timeout, unsigned int duration) {
+JobEntry* JobsList::addJob(pid_t pid, const string& cmd_str, bool is_stopped, bool is_timeout, unsigned int time_limit) {
     // remove zombies from jobs list
     removeFinishedJobs();
 
     // create new job entry
-    JobEntry new_job(pid, cmd_str, is_stopped, is_timeout, duration);
+    JobEntry new_job(pid, cmd_str, is_stopped, is_timeout, time_limit);
     JobID new_id = 1;
     if (!jobs.empty()) new_id = jobs.rbegin()->first + 1;
 
@@ -133,19 +129,27 @@ void JobsList::printJobsList() {
     }
 }
 void JobsList::killAllJobs() {
+    // remove zombies from jobs list
     removeFinishedJobs();
 
     cout << "smash: sending SIGKILL signal to " << jobs.size() << " jobs:" << endl;
 
-    // interate on map, print message and send SIGKILL than wait them
+    // iterate on map, print message and send SIGKILL then wait them
     for (auto& job : jobs) {
-        cout << job.second.pid << " " << job.second.cmd_str << endl;
+        cout << job.second.pid << ": " << job.second.cmd_str << endl;
         pid_t gpid = getpgid(job.second.pid);
-        if (gpid < 0) perror("smash error: getgpid failed");
-        if (killpg(gpid, SIGKILL) < 0) perror("smash error: killpg failed");
-        if (waitpid(job.second.pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
+        if (gpid < 0) {
+            perror("smash error: getgpid failed");
+        } else {
+            // send sigkill to a process group
+            if (killpg(gpid, SIGKILL) < 0) {
+                perror("smash error: killpg failed");
+            } else {
+                if (waitpid(job.second.pid, nullptr, 0) < 0)
+                    perror("smash error: waitpid failed");
+            }
+        }
         job.second.pid = 0;
-                                                                        // todo: add wait for other group children also
     }
 }
 void JobsList::removeFinishedJobs() {
@@ -1083,8 +1087,8 @@ const string& SmallShell::getPrompt() {
     return prompt;
 }
 
-JobEntry* SmallShell::addJob(pid_t pid, const string& str, bool is_stopped, bool is_timeout, unsigned int duration) {
-    return jobs->addJob(pid, str, is_stopped, is_timeout, duration);
+JobEntry* SmallShell::addJob(pid_t pid, const string& str, bool is_stopped, bool is_timeout, unsigned int time_limit) {
+    return jobs->addJob(pid, str, is_stopped, is_timeout, time_limit);
 }
 
 void SmallShell::updateJobs() {
