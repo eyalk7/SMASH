@@ -200,7 +200,7 @@ class KillCommand : public BuiltInCommand {
     JobEntry* job_entry;
     bool parseAndCheck(const char* cmd_line, int* signum, JobID* job_id);
     void printJobError();
-    void printSignalSent(int signum, pid_t pid);
+    void printSignalSent();
 
 public:
     KillCommand(const char* cmd_line, JobsList* jobs);
@@ -211,9 +211,8 @@ public:
 class ForegroundCommand : public BuiltInCommand {
     int job_id;
     JobsList* jobs;
-    void printArgumentsError();
+    JobEntry* job_entry;
     void printJobError(JobID job_id);
-    void printNoJobsError();
 public:
     ForegroundCommand(const char* cmd_line, JobsList* jobs);
     virtual ~ForegroundCommand() = default;

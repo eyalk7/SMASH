@@ -715,12 +715,14 @@ void KillCommand::execute() {
         return;
     }
 
-    // send signal, print message
+    // send signal to the process group
     if (killpg(gpid, signum) < 0) { // can't continue
         perror("smash error: killpg failed");
         return;
     }
-    printSignalSent(signum, job_entry->pid);
+
+    // print message reporting signal was sent
+    printSignalSent();
 
     // if signal was SIGSTOP or SIGTSTP update job state to stopped
     if (signum == SIGSTOP || signum == SIGTSTP) job_entry->is_stopped = true;
@@ -766,56 +768,54 @@ void KillCommand::printJobError() {
     str += " does not exist";
     printError(str);
 }
-void KillCommand::printSignalSent(int sig, pid_t p) {
+void KillCommand::printSignalSent() {
+    pid_t p = job_entry->pid;
+
     string str = "signal number ";
-    str += to_string(sig);
+    str += to_string(signum);
     str += " was sent to pid ";
     str += to_string((int)p);
-    printError(str);
+    std::cout << str << std:;endl;
 }
 
 ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
                                                                                 job_id(0),
-                                                                                jobs(jobs) {
+                                                                                jobs(jobs),
+                                                                                job_entry(nullptr) {
     // if num of argument not valid or syntax problem print error
     if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
-        printArgumentsError();
+        printError("fg: invalid arguments");
         job_id = -1;
         return;
     }
 
-    if (job_id == 0) return; // no arguments, get last job
-
-    auto job_entry = jobs->getJobById(job_id);
-    if (!job_entry) {
-        printJobError(job_id);
-        job_id = -1;
-        return;
+    if (job_id == 0) { // no arguments, get last job
+        // get the last job
+        job_entry = jobs->getLastJob(&job_id);
+    } else {
+        job_entry = jobs->getJobById(job_id);
+        if (!job_entry) {
+            printJobError(job_id);
+            job_id = -1;
+        }
     }
 }
 void ForegroundCommand::execute() {
     if (job_id < 0) return; // error in arguments or job not exist
-
-    JobEntry* job;
-    // if job_id == 0 than get the last job
-    // if jobs list empty print error
-    if (job_id == 0) {
-        job = jobs->getLastJob(&job_id);
-        if (!job) {
-            printNoJobsError();
-            return;
-        }
-    } else {
-        job = jobs->getJobById(job_id);
+    if (!job_entry) {
+        // jobs list is empty
+        printError("fg: jobs list is empty");
+        return;
     }
-    int pid = job->pid;
-    string cmd_str = job->cmd_str;
+
+    pid_t pid = job_entry->pid;
+    string cmd_str = job_entry->cmd_str;
 
     // print job's command line
     cout << cmd_str << " : " << pid << endl;
 
     // update state to not stopped
-    job->is_stopped = false;
+    job_entry->is_stopped = false;
 
     // send SIGCONT to job's pid
     pid_t gpid = getpgid(pid);
@@ -830,34 +830,33 @@ void ForegroundCommand::execute() {
         return;
     }
 
-    // wait for job
-    // nullify start time if stopped again
     CURR_FORK_CHILD_RUNNING = pid;
     int status;
+
+    // wait for job
     if (waitpid(pid, &status, WUNTRACED) < 0) {
         perror("smash error: waitid failed");
     } else {
-        if (WIFSTOPPED(status)) { // process stop so just renew time and update status
-            job->start_time = time(nullptr);
-            if (job->start_time == (time_t)(-1)) perror("smash error: time failed");
-            job->is_stopped = true;
-        } else { // remove from jobs list
-            jobs->removeJobById(job_id);
+        if (WIFSTOPPED(status)) { // if it gets stopped
+            // reset process' time
+            job_entry->start_time = time(nullptr);
+            if (job_entry->start_time == (time_t)(-1)) perror("smash error: time failed");
+
+            // update 'stopped' status
+            job_entry->is_stopped = true;
+
+        } else { // if it it finished
+            jobs->removeJobById(job_id);    // remove from jobs list
         }
     }
     CURR_FORK_CHILD_RUNNING = 0;
 }
-void ForegroundCommand::printArgumentsError() {
-    printError("fg: invalid arguments");
-}
+
 void ForegroundCommand::printJobError(JobID job_id) {
     string str = "fg: job-id ";
     str += to_string(job_id);
     str += " does not exist";
     printError(str);
-}
-void ForegroundCommand::printNoJobsError() {
-    printError("fg: jobs list is empty");
 }
 
 BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
