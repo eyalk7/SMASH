@@ -926,11 +926,10 @@ QuitCommand::QuitCommand(const char* cmd_line, JobsList* jobs) :    BuiltInComma
     // parse
     char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
-    if (num_of_args > 1) {
-        string arg = args[1];
-        if (arg == "kill") kill_all = true;
+    for (int i = 0; i < num_of_args; i++) {
+        if (i > 0 && string(args[i]) == "kill") kill_all = true;
+        free(args[i]);
     }
-    for (int i = 0; i < num_of_args; i++) free(args[i]);
 }
 void QuitCommand::execute() {
     if (kill_all) jobs->killAllJobs();
