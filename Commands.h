@@ -42,7 +42,7 @@ class SmallShell;
 extern pid_t CURR_FORK_CHILD_RUNNING;   // PID of the process currently in the foreground
 extern pid_t SMASH_PROCESS_PID;         // PID of the SMASH process
 extern JobsList* GLOBAL_JOBS_POINTER;   // pointer to the Jobs list in SmallSHell
-extern bool QUIT_SHELL;                 // True = quit was sent
+extern bool QUIT_SHELL;                 // While this is false the smash will keep running
 
 
 //---------------------------JOBS LISTS------------------------------

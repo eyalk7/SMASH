@@ -984,8 +984,10 @@ CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(
     for (int i = 0; i < num_of_args; i++) free(args[i]);
 }
 void CopyCommand::execute() {
+    // too few arguments or empty string given as an argument
     if (old_path.empty() || new_path.empty()) return;
 
+    // open read file (where the user wants to copy from)
     int read_flags = O_RDONLY;
     int fd_read = open(old_path.c_str(), read_flags);
     if (fd_read == -1) {
@@ -993,6 +995,7 @@ void CopyCommand::execute() {
         return;
     }
 
+    // open write file (where the user wants to copy to)
     int write_flags = O_WRONLY | O_CREAT | O_TRUNC;
     mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
 
@@ -1006,16 +1009,19 @@ void CopyCommand::execute() {
     pid_t pid = fork();
     if (pid == 0) { // copy data in child process
         if (isSmashChild()) setpgrp();  // make sure that the child get different GROUP ID
-        signal(SIGTSTP, SIG_DFL); // stop if get SIGTSTP
+
+        signal(SIGTSTP, SIG_DFL); // copying will stop if SIGTSTP is received
 
         int SIZE = COPY_DATA_BUFFER_SIZE;
 
         char buff[SIZE];
         ssize_t read_retVal = read(fd_read, buff, SIZE);
         ssize_t write_retVal;
-        while (read_retVal > 0) {
+        while (read_retVal > 0) {   // while there is something to write
             write_retVal = write(fd_write, buff, read_retVal);
             if (write_retVal == -1) perror("smash error: write failed");
+
+            // check that the read size equals the write size
             if (write_retVal != read_retVal) perror("smash error: incomplete write");
 
             read_retVal = read(fd_read, buff, SIZE);
@@ -1038,14 +1044,17 @@ void CopyCommand::execute() {
     if (childWait(pid)) return;
 
     if (background)     // run in background
+        // & was given - add to jobs list
         jobs->addJob(pid, original_cmd);
     else {              // run in foreground
-
         int status;
         CURR_FORK_CHILD_RUNNING = pid;
+
+        // wait for child process
         if (waitpid(pid, &status, WUNTRACED) < 0) {
             perror("smash error: waitpid failed");
         } else if (WIFSTOPPED(status)) {
+            // if stopped add to jobs list
             jobs->addJob(pid, original_cmd, true);
         }
 
