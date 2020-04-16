@@ -178,8 +178,8 @@ public:
 };
 
 class ChangeDirCommand : public BuiltInCommand {
-    string new_path;
     string* old_pwd;
+    string new_path;
 public:
     ChangeDirCommand(const char* cmd_line, string* last_dir);
     virtual ~ChangeDirCommand() = default;
@@ -195,10 +195,10 @@ public:
 };
 
 class KillCommand : public BuiltInCommand {
-    int signum, job_id;
     JobsList* jobs;
+    int signum, job_id;
+    JobEntry* job_entry;
     bool parseAndCheck(const char* cmd_line, int* signum, JobID* job_id);
-    void printArgumentsError();
     void printJobError();
     void printSignalSent(int signum, pid_t pid);
 

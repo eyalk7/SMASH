@@ -164,6 +164,7 @@ void JobsList::killAllJobs() {
 
     jobs.clear();
 }
+
 void JobsList::removeFinishedJobs() {
     if (isSmashChild()) return; // i'm child
 
@@ -192,7 +193,7 @@ JobEntry* JobsList::getJobById(JobID jobId) {
     // remove zombies from jobs list
     removeFinishedJobs();
 
-    if (jobs.contains(jobID)) return nullptr;
+    if (jobs.count(jobId) == 0) return nullptr;
 
     // return from map
     return &jobs[jobId];
@@ -506,7 +507,7 @@ TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Comm
 }
 void TimeoutCommand::execute() {
     if (cmd_part.empty()) return; // no command to execute
-    // todo: what if duration == 0 ? (maybe invalid duration given)
+    // todo: what if duration == 0 ? (maybe invalid duration given) - piazza question
 
     pid_t pid = fork();
 
@@ -629,8 +630,8 @@ void GetCurrDirCommand::execute() {
 }
 
 ChangeDirCommand::ChangeDirCommand(const char* cmd_line, string* last_dir) : BuiltInCommand(cmd_line),
-                                                                             new_path(""),
-                                                                             old_pwd(last_dir) {
+                                                                             old_pwd(last_dir),
+                                                                             new_path("") {
     char* args[COMMAND_MAX_ARGS+1];
     int num_of_args = _parseCommandLine(cmd_line, args);
 
@@ -660,7 +661,8 @@ void ChangeDirCommand::execute() {
     int retVAl = 0;
     if (new_path == "-") // change to last directory
     {
-        if (old_pwd->empty()) { // if no old_pwd print error
+        if (old_pwd->empty()) {
+            // if no old_pwd print error
             printError("cd: OLDPWD not set");
         } else {
             retVAl = chdir(old_pwd->c_str());
@@ -686,17 +688,18 @@ void JobsCommand::execute() {
 }
 
 KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
+                                                                    jobs(jobs),
                                                                     signum(0),
                                                                     job_id(0),
-                                                                    jobs(jobs) {
+                                                                    job_entry(nullptr) {
     // parse: type of signal and jobID, if syntax not valid print error
     if (!parseAndCheck(cmd_line, &signum, &job_id)) {
-        printArgumentsError();
+        printError("kill: invalid arguments");
         return;
     }
 
     // if job id not exist print error message
-    auto job_entry = jobs->getJobById(job_id);
+    job_entry = jobs->getJobById(job_id);
     if (!job_entry) {
         printJobError();
         job_id = 0;
@@ -704,8 +707,7 @@ KillCommand::KillCommand(const char* cmd_line, JobsList* jobs) :    BuiltInComma
     }
 }
 void KillCommand::execute() {
-    if (job_id == 0 || signum == 0) return;
-    auto job_entry = jobs->getJobById(job_id);
+    if (job_id == 0 || signum == 0 || !job_entry) return;
 
     pid_t gpid = getpgid(job_entry->pid);
     if (gpid < 0) {
@@ -757,9 +759,6 @@ bool KillCommand::parseAndCheck(const char* cmd_line, int* sig, JobID* j_id) {
     // all OK
     *j_id = (int)job;
     return true;
-}
-void KillCommand::printArgumentsError() {
-    printError("kill: invalid arguments");
 }
 void KillCommand::printJobError() {
     string str = "kill: job-id ";
