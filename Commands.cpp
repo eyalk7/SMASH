@@ -159,8 +159,10 @@ void JobsList::killAllJobs() {
         }
         job.second.pid = 0;
 
-        // todo: piazza question
+        // todo: wait for group ? - piazza question
     }
+
+    jobs.clear();
 }
 void JobsList::removeFinishedJobs() {
     if (isSmashChild()) return; // i'm child
@@ -488,7 +490,7 @@ TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Comm
         else {
             // todo: piazza question
             //printError("timeout: invalid duration");
-            return;
+            //return;
         }
 
         for (int i = 2; i < num_of_args; i++) {
@@ -504,6 +506,7 @@ TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Comm
 }
 void TimeoutCommand::execute() {
     if (cmd_part.empty()) return; // no command to execute
+    // todo: what if duration == 0 ? (maybe invalid duration given)
 
     pid_t pid = fork();
 
@@ -515,21 +518,25 @@ void TimeoutCommand::execute() {
 
     } else if (pid > 0) { // parent
 
+        // add the timeout command to the jobs list as a timeout job
         JobEntry* job_entry = shell->addJob(pid, original_cmd, false, true, duration);
         alarm(duration);
 
         if (!to_background) {
-            // wait for job
-            // add to jobs list if stopped
             CURR_FORK_CHILD_RUNNING = pid;
             int status;
+
+            // wait for job
             if (waitpid(pid, &status, WUNTRACED) < 0) {
                 perror("smash error: waitpid failed");
             } else {
                 if (WIFSTOPPED(status)) {
+                    // set as stopped if stopped
+                    // (it's already in jobs list)
                     job_entry->is_stopped = true;
-                } else { //finished, remove from jobslist
-                    job_entry->pid = 0;
+                } else {
+                    // finished -> remove from jobs list
+                    job_entry->pid = 0; // todo: maybe make shell function that removes a job - shell->removeJob(job_entry->pid);
                 }
             }
             CURR_FORK_CHILD_RUNNING = 0;
@@ -562,17 +569,19 @@ void ExternalCommand::execute() {
     }
     else if (pid > 0) { //parent
         if (childWait(pid)) return;
-        // if with "&" add to JOBS LIST and return
-        if (to_background) {
+
+        if (to_background) {    // run in background
+            // if with "&" add to JOBS LIST and return
             jobs->addJob(pid, original_cmd);
-        } else {
-            // wait for job
-            // add to jobs list if stopped
+        } else {                // run in foreground
             CURR_FORK_CHILD_RUNNING = pid;
             int status;
+
+            // wait for job
             if (waitpid(pid, &status, WUNTRACED) < 0) {
                 perror("smash error: waitpid failed");
             } else {
+                // add to jobs list if stopped
                 if (WIFSTOPPED(status)) jobs->addJob(pid, original_cmd, true);
             }
             CURR_FORK_CHILD_RUNNING = 0;
