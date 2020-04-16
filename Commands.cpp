@@ -74,8 +74,16 @@ bool checkAndRemoveAmpersand(string& str) {
     return has_ampersand;
 }
 
-bool isChild(pid_t pid) {
-    if (getpid() != SMASH_PROCESS_PID) { // i'm child of SMASH, just wait for grandchild and return
+bool isSmashChild() {
+    return getppid() == SMASH_PROCESS_PID;
+}
+bool isSmash() {
+    return getpid() == SMASH_PROCESS_PID;
+}
+
+bool childWait(pid_t pid) {
+    // i'm child of SMASH, just wait for grandchild and return
+    if (!isSmash()) {
         if (waitpid(pid, nullptr, 0) < 0) perror("smash error: waitpid failed");
         return true;
     }
@@ -153,9 +161,9 @@ void JobsList::killAllJobs() {
     }
 }
 void JobsList::removeFinishedJobs() {
-    if (getppid() == SMASH_PROCESS_PID) return; // i'm child
+    if (isSmashChild()) return; // i'm child
 
-    vector<JobID> to_remove(100,0); // MAX_PROCESS_COUNT ?
+    vector<JobID> to_remove(100,0);
     int to_remove_iter= 0;
 
     // iterate on map, and waitpid with each pid WNOHANG flag
@@ -247,7 +255,7 @@ void PipeCommand::execute() {
     pid_t pid = fork();
 
     if (pid == 0) { // child process
-        if (getppid() == SMASH_PROCESS_PID) setpgrp();      // make sure that the child gets a different GROUP ID
+        if (isSmashChild()) setpgrp();      // make sure that the child gets a different GROUP ID
 
         int my_pipe[2];
         if (pipe(my_pipe) == -1) {
@@ -285,7 +293,7 @@ void PipeCommand::execute() {
         return;
     }
 
-    if (isChild(pid)) return;
+    if (childWait(pid)) return;
 
     if (background) {
         shell->addJob(pid, original_cmd);
@@ -411,7 +419,7 @@ void RedirectionCommand::execute() {
     pid_t pid = fork();
 
     if (pid == 0) { // child
-        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
+        if (isSmashChild()) setpgrp();  // make sure that the child get different GROUP ID
 
         // put file descriptor in STDOUT place
         if (dup2(file_fd, STDOUT) < 0) {  // can't continue
@@ -426,7 +434,7 @@ void RedirectionCommand::execute() {
         exit(0);
 
     } else if (pid > 0) { // parent
-        if (isChild(pid)) return;
+        if (childWait(pid)) return;
 
         // if with "&" add to JOBS LIST and return
         if (to_background) {
@@ -451,7 +459,7 @@ void RedirectionCommand::execute() {
 TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
                                                                             shell(shell),
                                                                             to_background (false){
-    if (getpid() != SMASH_PROCESS_PID) return; // only smash can handle this
+    if (!isSmash()) return;
 
     //parsing
     string tmp;
@@ -480,7 +488,7 @@ void TimeoutCommand::execute() {
     pid_t pid = fork();
 
     if (pid == 0) { // child
-        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
+        if (isSmashChild()) setpgrp();  // make sure that the child get different GROUP ID
 
         shell->executeCommand(cmd_part.c_str());
         exit(0);
@@ -523,7 +531,7 @@ void ExternalCommand::execute() {
     pid_t pid = fork();
 
     if (pid == 0) { //child:
-        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
+        if (isSmashChild()) setpgrp();  // make sure that the child get different GROUP ID
 
         // exec to bash with cmd_line
         string arg1 = "-c";
@@ -533,7 +541,7 @@ void ExternalCommand::execute() {
         exit(0);    // child finished (if execl failed)
     }
     else if (pid > 0) { //parent
-        if (isChild(pid)) return;
+        if (childWait(pid)) return;
         // if with "&" add to JOBS LIST and return
         if (to_background) {
             jobs->addJob(pid, original_cmd);
@@ -977,7 +985,7 @@ void CopyCommand::execute() {
 
     pid_t pid = fork();
     if (pid == 0) { // copy data in child process
-        if (getppid() == SMASH_PROCESS_PID) setpgrp();  // make sure that the child get different GROUP ID
+        if (isSmashChild()) setpgrp();  // make sure that the child get different GROUP ID
         signal(SIGTSTP, SIG_DFL); // stop if get SIGTSTP
 
         int SIZE = COPY_DATA_BUFFER_SIZE;
@@ -1007,7 +1015,7 @@ void CopyCommand::execute() {
 
     if (pid < 1) return;    // fork failed, parent process returns
 
-    if (isChild(pid)) return;
+    if (childWait(pid)) return;
 
     if (background)     // run in background
         jobs->addJob(pid, original_cmd);
