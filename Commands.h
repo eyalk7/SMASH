@@ -130,8 +130,8 @@ public:
 class TimeoutCommand : public Command {
     SmallShell* shell;
     bool to_background;
-    string cmd_part;
     int duration;
+    string cmd_part;
 
 public:
     TimeoutCommand(const char* cmd_line, SmallShell* shell);

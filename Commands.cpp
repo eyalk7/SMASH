@@ -472,7 +472,7 @@ void RedirectionCommand::execute() {
 TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
                                                                             shell(shell),
                                                                             to_background (false),
-                                                                            cmd_part(""), duration(0) {
+                                                                            duration(0), cmd_part("") {
     if (!isSmash()) return;
 
     //parsing
@@ -489,9 +489,8 @@ TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Comm
             duration = stoi(args[1]);
         }
         else {
-            // todo: piazza question
-            //printError("timeout: invalid duration");
-            //return;
+            printError("timeout: invalid duration");
+            // duration = 0 so execute() will do nothing
         }
 
         for (int i = 2; i < num_of_args; i++) {
@@ -500,14 +499,20 @@ TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Comm
         }
     }
     for (int i = 0; i < num_of_args; i++) free(args[i]);
-    if (num_of_args < 3) return; // too few arguments // todo: piazza question
+    if (num_of_args < 3) {  // too few arguments
+        printError("timeout: too few arguments");
+        return;
+        // cmd_part = "" so execute() will do nothing
+    }
 
     // remove ampersand and check to background
     to_background = checkAndRemoveAmpersand(cmd_part);
 }
 void TimeoutCommand::execute() {
-    if (cmd_part.empty()) return; // no command to execute
-    // todo: what if duration == 0 ? (maybe invalid duration given) - piazza question
+    if (cmd_part.empty()) return;  // no command to execute
+    if (duration < 1) return;      // invalid duration given
+
+    // todo: should we still execute the command if duration is invalid? - piazza question
 
     pid_t pid = fork();
 
@@ -535,9 +540,10 @@ void TimeoutCommand::execute() {
                     // set as stopped if stopped
                     // (it's already in jobs list)
                     job_entry->is_stopped = true;
+                    // todo: reset the jobs timer when it gets stopped!
                 } else {
-                    // finished -> remove from jobs list
-                    job_entry->pid = 0; // todo: maybe make shell function that removes a job - shell->removeJob(job_entry->pid);
+                    // finished -> set to remove from jobs list
+                    job_entry->pid = 0; // todo: maybe make shell function that removes a job - shell->removeJob(job_id ??);
                 }
             }
             CURR_FORK_CHILD_RUNNING = 0;
