@@ -57,6 +57,7 @@ struct JobEntry {
     explicit JobEntry(pid_t pid = 0, const string& cmd_str = "",
                       bool is_stopped = false, bool is_timeout = false,
                       unsigned int time_limit = 0);
+    void SetTime();
 };
 typedef int JobID;
 

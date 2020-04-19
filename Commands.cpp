@@ -100,9 +100,13 @@ JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped, bool is_ti
                                                                                                                 is_stopped(is_stopped),
                                                                                                                 is_timeout(is_timeout),
                                                                                                                 time_limit(time_limit) {
+    SetTime();
+}
+JobEntry::SetTime() {
     start_time = time(nullptr);
     if (start_time == (time_t)(-1)) perror("smash error: time failed");
 }
+
 JobEntry* JobsList::addJob(pid_t pid, const string& cmd_str, bool is_stopped, bool is_timeout, unsigned int time_limit) {
     // remove zombies from jobs list
     removeFinishedJobs();
@@ -158,8 +162,6 @@ void JobsList::killAllJobs() {
             }
         }
         job.second.pid = 0;
-
-        // todo: wait for group ? - piazza question
     }
 
     jobs.clear();
@@ -173,6 +175,7 @@ void JobsList::removeFinishedJobs() {
 
     // iterate on map looking for finished jobs
     for (const auto& job : jobs) {
+        // pid = 0 --> it's set to be removed
         if (job.second.pid == 0) {
             to_remove[to_remove_iter++] = job.first;
             continue;
@@ -512,8 +515,6 @@ void TimeoutCommand::execute() {
     if (cmd_part.empty()) return;  // no command to execute
     if (duration < 1) return;      // invalid duration given
 
-    // todo: should we still execute the command if duration is invalid? - piazza question
-
     pid_t pid = fork();
 
     if (pid == 0) { // child
@@ -540,10 +541,13 @@ void TimeoutCommand::execute() {
                     // set as stopped if stopped
                     // (it's already in jobs list)
                     job_entry->is_stopped = true;
-                    // todo: reset the jobs timer when it gets stopped!
+
+                    // reset the job's timer
+                    // (this is when it's supposed to have been added to the job's list)
+                    job_entry->SetTime();
                 } else {
                     // finished -> set to remove from jobs list
-                    job_entry->pid = 0; // todo: maybe make shell function that removes a job - shell->removeJob(job_id ??);
+                    job_entry->pid = 0;
                 }
             }
             CURR_FORK_CHILD_RUNNING = 0;
