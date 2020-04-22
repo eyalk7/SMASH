@@ -17,7 +17,9 @@ int main(int argc, char* argv[]) {
 
     struct sigaction act;
     act.sa_handler = alarmHandler;
+    sigemptyset (&act.sa_mask);
     act.sa_flags = SA_RESTART;
+
     if(sigaction(SIGALRM , &act ,nullptr) < 0) {
         perror("smash error: sigaction failed");
     }

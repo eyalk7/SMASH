@@ -35,6 +35,9 @@ using std::map;
 #define STDOUT 1
 #define STDERR 2
 
+#define NO_FGBG_ARGS 0
+#define FGBG_INVALID_ARGS -1
+
 class JobsList;
 class SmallShell;
 
@@ -53,6 +56,7 @@ struct JobEntry {
     bool is_timeout;        // is this a timeout command
     unsigned int time_limit;  // relevant if this is a timeout command
     time_t start_time;
+    time_t original_start_time; // relevant if this is a timeout command
 
     explicit JobEntry(pid_t pid = 0, const string& cmd_str = "",
                       bool is_stopped = false, bool is_timeout = false,

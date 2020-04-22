@@ -48,7 +48,6 @@ void ctrlCHandler(int sig_num) {
 }
 
 void alarmHandler(int sig_num) {
-    bool signal_sent = false;
     auto curr_time = time(nullptr);
     if (curr_time == (time_t)(-1)) {
         perror("smash error: time failed");
@@ -62,15 +61,10 @@ void alarmHandler(int sig_num) {
     for (auto job : jobs) {
         if (!job.second.is_timeout || job.second.pid == 0) continue;
 
-        auto diff_time = difftime(curr_time, job.second.start_time);
+        auto diff_time = difftime(curr_time, job.second.original_start_time);
         if (job.second.time_limit <= (unsigned int)diff_time) {
             wakeUpCall(job.second.pid, job.second.cmd_str);
-            signal_sent = true;
         }
-    }
-
-    if (!signal_sent) {
-        cout << "smash: got an alarm" << endl;
     }
 }
 void wakeUpCall(int pid, const string& str) {

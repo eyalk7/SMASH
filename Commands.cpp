@@ -91,7 +91,7 @@ bool childWait(pid_t pid) {
 }
 
 void printError(const string& msg) {
-    std::cout << "smash error: " << msg << endl;
+    std::cerr << "smash error: " << msg << endl;
 }
 
 //---------------------------JOBS LISTS------------------------------
@@ -101,8 +101,9 @@ JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped, bool is_ti
                                                                                                                 is_timeout(is_timeout),
                                                                                                                 time_limit(time_limit) {
     SetTime();
+    original_start_time = start_time;
 }
-JobEntry::SetTime() {
+void JobEntry::SetTime() {
     start_time = time(nullptr);
     if (start_time == (time_t)(-1)) perror("smash error: time failed");
 }
@@ -383,9 +384,11 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
     // save command part
     cmd_part = _trim(original_cmd.substr(0, split_place));
 
-    // and file address part
+    // and file address part (get first argument and ignore everything after it)
     if (to_append) split_place++;
     pathname = _trim(original_cmd.substr(split_place+1));
+    int end_of_pathname = pathname.find_first_of(" ");
+    pathname = pathname.substr(0,end_of_pathname);
 
     // move ampersand from pathname to cmd_part if there is one
     if (checkAndRemoveAmpersand(pathname)) to_background = true;
@@ -397,7 +400,11 @@ void RedirectionCommand::execute() {
 
     // open file, if to_append is true open in append mode
     int flags = O_CREAT | O_WRONLY;
-    if (to_append) flags |= O_APPEND;
+    if (to_append) {
+        flags |= O_APPEND;
+    } else {
+        flags |= O_TRUNC;
+    }
     mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
     int file_fd = open(pathname.c_str(), flags, mode);
     if (file_fd < 0) { // can't continue
@@ -491,8 +498,9 @@ TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Comm
         if (is_num) {
             duration = stoi(args[1]);
         }
-        else {
-            printError("timeout: invalid duration");
+
+        if (!is_num || (is_num && duration < 1)) {
+            printError("timeout: invalid arguments");
             // duration = 0 so execute() will do nothing
         }
 
@@ -503,7 +511,7 @@ TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Comm
     }
     for (int i = 0; i < num_of_args; i++) free(args[i]);
     if (num_of_args < 3) {  // too few arguments
-        printError("timeout: too few arguments");
+        printError("timeout: invalid arguments");
         return;
         // cmd_part = "" so execute() will do nothing
     }
@@ -585,6 +593,7 @@ void ExternalCommand::execute() {
             // if with "&" add to JOBS LIST and return
             jobs->addJob(pid, original_cmd);
         } else {                // run in foreground
+
             CURR_FORK_CHILD_RUNNING = pid;
             int status;
 
@@ -789,29 +798,33 @@ void KillCommand::printSignalSent() {
 }
 
 ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
-                                                                                job_id(0),
+                                                                                job_id(NO_FGBG_ARGS),
                                                                                 jobs(jobs),
                                                                                 job_entry(nullptr) {
     // if num of argument not valid or syntax problem print error
     if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
+        if (job_id == FGBG_INVALID_ARGS) {
+            printJobError();
+            return;
+        }
         printError("fg: invalid arguments");
-        job_id = -1;
+        job_id = FGBG_INVALID_ARGS;
         return;
     }
 
-    if (job_id == 0) { // no arguments, get last job
+    if (job_id == NO_FGBG_ARGS) { // no arguments, get last job
         // get the last job
         job_entry = jobs->getLastJob(&job_id);
     } else {
         job_entry = jobs->getJobById(job_id);
         if (!job_entry) {
             printJobError();
-            job_id = -1;
+            job_id = FGBG_INVALID_ARGS;
         }
     }
 }
 void ForegroundCommand::execute() {
-    if (job_id < 0) return; // error in arguments or job not exist
+    if (job_id == FGBG_INVALID_ARGS) return; // error in arguments or job not exist
 
     if (!job_entry) { // no arguments given + jobs list is empty
         printError("fg: jobs list is empty");
@@ -870,34 +883,38 @@ void ForegroundCommand::printJobError() {
 }
 
 BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
-                                                                             job_id(0),
+                                                                             job_id(NO_FGBG_ARGS),
                                                                              jobs(jobs),
                                                                              job_entry(nullptr) {
     // if num of argument not valid or syntax problem print error
     if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
+        if (job_id == FGBG_INVALID_ARGS) {
+            printJobError();
+            return;
+        }
         printError("bg: invalid arguments");
-        job_id = -1;
+        job_id = FGBG_INVALID_ARGS;
         return;
     }
 
-    if (job_id == 0) { // no arguments, get last job
+    if (job_id == NO_FGBG_ARGS) { // no arguments, get last job
         job_entry = jobs->getLastStoppedJob(&job_id);
     } else {
         job_entry = jobs->getJobById(job_id);
         if (!job_entry) {
             printJobError();
-            job_id = -1;
+            job_id = FGBG_INVALID_ARGS;
             return;
         }
         if (!job_entry->is_stopped) {
             printNotStoppedError();
-            job_id = -1;
+            job_id = FGBG_INVALID_ARGS;
             return;
         }
     }
 }
 void BackgroundCommand::execute() {
-    if (job_id < 0) return; // error in arguments or job not exist
+    if (job_id == FGBG_INVALID_ARGS) return; // error in arguments or job not exist
 
     if (!job_entry) {   // no arguments given + no stopped jobs to resume
         printError("bg: there is no stopped jobs to resume");
@@ -953,9 +970,14 @@ bool parseAndCheckFgBgCommands(const char* cmd_line, JobID* job_id) {
     if (num_of_args > 2) return false;
     if (num_of_args == 1) return true;
 
-    for (auto letter : arg) if (!isdigit(letter)) return false;
+    int iter = 0;
+    if (arg[0] == '-') iter++;
+    while (iter < (int)arg.size()) if (!isdigit(arg[iter++])) return false;
     long job = stol(arg);
-    if (job > numeric_limits<int>::max() || job < 1) return false;
+    if (job > numeric_limits<int>::max() || job < 1) {
+        *job_id = FGBG_INVALID_ARGS;
+        return false;
+    }
 
     // all OK
     *job_id = (int)job;
@@ -996,6 +1018,10 @@ CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(
 void CopyCommand::execute() {
     // too few arguments or empty string given as an argument
     if (old_path.empty() || new_path.empty()) return;
+    if (old_path == new_path) {
+        cout << "smash: " << old_path << " was copied to " << new_path << endl;
+        return;
+    }
 
     // open read file (where the user wants to copy from)
     int read_flags = O_RDONLY;
@@ -1038,6 +1064,8 @@ void CopyCommand::execute() {
         }
 
         if (read_retVal == -1) perror("smash error: read failed");
+
+        cout << "smash: " << old_path << " was copied to " << new_path << endl;
 
     } else if (pid < 1) perror("smash error: fork failed");
 
