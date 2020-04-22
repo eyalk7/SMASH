@@ -384,14 +384,16 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
     // save command part
     cmd_part = _trim(original_cmd.substr(0, split_place));
 
-    // and file address part (get first argument and ignore everything after it)
+    // and file address part
     if (to_append) split_place++;
     pathname = _trim(original_cmd.substr(split_place+1));
-    int end_of_pathname = pathname.find_first_of(" ");
-    pathname = pathname.substr(0,end_of_pathname);
 
     // move ampersand from pathname to cmd_part if there is one
     if (checkAndRemoveAmpersand(pathname)) to_background = true;
+
+    // get first argument and ignore everything after it
+    int end_of_pathname = pathname.find_first_of(" ");
+    pathname = pathname.substr(0,end_of_pathname);
 
     // check if cmd is fg
     if (cmd_part.find("fg ") == 0 || cmd_part.compare("fg") == 0) cmd_is_fg = true;
