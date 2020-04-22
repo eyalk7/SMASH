@@ -798,33 +798,34 @@ void KillCommand::printSignalSent() {
 }
 
 ForegroundCommand::ForegroundCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),
-                                                                                job_id(NO_FGBG_ARGS),
+                                                                                job_id(1),
                                                                                 jobs(jobs),
                                                                                 job_entry(nullptr) {
     // if num of argument not valid or syntax problem print error
-    if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
-        if (job_id == FGBG_INVALID_ARGS) {
+    parseAndCheckFgBgCommands(cmd_line, job_id, no_args, invalid_args);
+    if (invalid_args) {
+        if (job_id < 1) {
             printJobError();
-            return;
+        } else {
+            printError("fg: invalid arguments");
         }
-        printError("fg: invalid arguments");
-        job_id = FGBG_INVALID_ARGS;
+
         return;
     }
 
-    if (job_id == NO_FGBG_ARGS) { // no arguments, get last job
+    if (no_args) { // no arguments, get last job
         // get the last job
         job_entry = jobs->getLastJob(&job_id);
     } else {
         job_entry = jobs->getJobById(job_id);
         if (!job_entry) {
             printJobError();
-            job_id = FGBG_INVALID_ARGS;
+            invalid_args = true;
         }
     }
 }
 void ForegroundCommand::execute() {
-    if (job_id == FGBG_INVALID_ARGS) return; // error in arguments or job not exist
+    if (invalid_args) return; // error in arguments or job not exist
 
     if (!job_entry) { // no arguments given + jobs list is empty
         printError("fg: jobs list is empty");
@@ -883,38 +884,39 @@ void ForegroundCommand::printJobError() {
 }
 
 BackgroundCommand::BackgroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
-                                                                             job_id(NO_FGBG_ARGS),
+                                                                             job_id(1),
                                                                              jobs(jobs),
                                                                              job_entry(nullptr) {
     // if num of argument not valid or syntax problem print error
-    if (!parseAndCheckFgBgCommands(cmd_line, &job_id)) {
-        if (job_id == FGBG_INVALID_ARGS) {
+    parseAndCheckFgBgCommands(cmd_line, job_id, no_args, invalid_args);
+    if (invalid_args) {
+        if (job_id < 1) {
             printJobError();
-            return;
+        } else {
+            printError("bg: invalid arguments");
         }
-        printError("bg: invalid arguments");
-        job_id = FGBG_INVALID_ARGS;
+
         return;
     }
 
-    if (job_id == NO_FGBG_ARGS) { // no arguments, get last job
+    if (no_args) { // no arguments, get last job
         job_entry = jobs->getLastStoppedJob(&job_id);
     } else {
         job_entry = jobs->getJobById(job_id);
         if (!job_entry) {
             printJobError();
-            job_id = FGBG_INVALID_ARGS;
+            invalid_args = true;
             return;
         }
         if (!job_entry->is_stopped) {
             printNotStoppedError();
-            job_id = FGBG_INVALID_ARGS;
+            invalid_args = true;
             return;
         }
     }
 }
 void BackgroundCommand::execute() {
-    if (job_id == FGBG_INVALID_ARGS) return; // error in arguments or job not exist
+    if (invalid_args) return; // error in arguments or job not exist
 
     if (!job_entry) {   // no arguments given + no stopped jobs to resume
         printError("bg: there is no stopped jobs to resume");
@@ -958,8 +960,10 @@ void BackgroundCommand::printNotStoppedError() {
     printError(str);
 }
 
-bool parseAndCheckFgBgCommands(const char* cmd_line, JobID* job_id) {
+void parseAndCheckFgBgCommands(const char* cmd_line, JobID& job_id, bool& no_args, bool& invalid_args) {
     string arg;
+    no_args = false;
+    invalid_args = false;
 
     // parse
     char* args[COMMAND_MAX_ARGS+1];
@@ -967,21 +971,28 @@ bool parseAndCheckFgBgCommands(const char* cmd_line, JobID* job_id) {
     if (num_of_args == 2) arg = args[1];
     for (int i = 0; i < num_of_args; i++) free(args[i]);
 
-    if (num_of_args > 2) return false;
-    if (num_of_args == 1) return true;
+    if (num_of_args > 2) {
+        invalid_args = true;
+        return;
+    }
+    if (num_of_args == 1) {
+        no_args = true;
+        return;
+    }
 
     int iter = 0;
     if (arg[0] == '-') iter++;
-    while (iter < (int)arg.size()) if (!isdigit(arg[iter++])) return false;
-    long job = stol(arg);
-    if (job > numeric_limits<int>::max() || job < 1) {
-        *job_id = FGBG_INVALID_ARGS;
-        return false;
+    while (iter < (int)arg.size()) {
+        if (!isdigit(arg[iter++])) {
+            invalid_args = true;
+            return;
+        }
     }
-
-    // all OK
-    *job_id = (int)job;
-    return true;
+    job_id = stol(arg);
+    if (job_id > numeric_limits<int>::max() || job_id < 1) {
+        invalid_args = true;
+        return;
+    }
 }
 
 QuitCommand::QuitCommand(const char* cmd_line, JobsList* jobs) :    BuiltInCommand(cmd_line),

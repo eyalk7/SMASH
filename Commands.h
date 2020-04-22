@@ -35,9 +35,6 @@ using std::map;
 #define STDOUT 1
 #define STDERR 2
 
-#define NO_FGBG_ARGS 0
-#define FGBG_INVALID_ARGS -1
-
 class JobsList;
 class SmallShell;
 
@@ -229,6 +226,8 @@ class ForegroundCommand : public BuiltInCommand {
     int job_id;
     JobsList* jobs;
     JobEntry* job_entry;
+    bool no_args;
+    bool invalid_args;
 
 public:
     ForegroundCommand(const char* cmd_line, JobsList* jobs);
@@ -243,6 +242,8 @@ class BackgroundCommand : public BuiltInCommand {
     int job_id;
     JobsList* jobs;
     JobEntry* job_entry;
+    bool no_args;
+    bool invalid_args;
 
 public:
     BackgroundCommand(const char* cmd_line, JobsList* jobs);
@@ -255,7 +256,7 @@ private:
 };
 
 // parsing function for background and foreground commands
-bool parseAndCheckFgBgCommands(const char* cmd_line, JobID* job_id);
+void parseAndCheckFgBgCommands(const char* cmd_line, JobID& job_id, bool& no_args, bool& invalid_args);
 
 class QuitCommand : public BuiltInCommand {
     bool kill_all;
