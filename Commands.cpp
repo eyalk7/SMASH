@@ -1057,26 +1057,41 @@ void CopyCommand::execute() {
     if (pid == 0) { // copy data in child process
         if (isSmashChild()) setpgrp();  // make sure that the child get different GROUP ID
 
-        signal(SIGTSTP, SIG_DFL); // copying will stop if SIGTSTP is received
+        // copying will stop if SIGTSTP is received
+        if (signal(SIGTSTP, SIG_DFL) == SIG_ERR){
+            perror("smash error: failed to set SIGTSTP handler");
+        }
 
         int SIZE = COPY_DATA_BUFFER_SIZE;
 
+        bool copy_success = true;
         char buff[SIZE];
         ssize_t read_retVal = read(fd_read, buff, SIZE);
         ssize_t write_retVal;
         while (read_retVal > 0) {   // while there is something to write
             write_retVal = write(fd_write, buff, read_retVal);
-            if (write_retVal == -1) perror("smash error: write failed");
+            if (write_retVal == -1) {
+                perror("smash error: write failed");
+                copy_success = false;
+            }
 
             // check that the read size equals the write size
-            if (write_retVal != read_retVal) perror("smash error: incomplete write");
+            if (write_retVal != read_retVal) {
+                perror("smash error: incomplete write");
+                copy_success = false;
+            }
 
             read_retVal = read(fd_read, buff, SIZE);
         }
 
-        if (read_retVal == -1) perror("smash error: read failed");
+        if (read_retVal == -1) {
+            perror("smash error: read failed");
+            copy_success = false;
+        }
 
-        cout << "smash: " << old_path << " was copied to " << new_path << endl;
+        if (copy_success) {
+            cout << "smash: " << old_path << " was copied to " << new_path << endl;
+        }
 
     } else if (pid < 1) perror("smash error: fork failed");
 
