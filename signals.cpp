@@ -48,15 +48,17 @@ void ctrlCHandler(int sig_num) {
 }
 
 void alarmHandler(int sig_num) {
+    // clean jobs list
+    GLOBAL_JOBS_POINTER->removeFinishedJobs();
+
+    // get curr time
     time_t curr_time = time(nullptr);
     if (curr_time == (time_t)(-1)) {
         perror("smash error: time failed");
         return;
     }
 
-    // search all jobs, for timeout commands
-    // if pid  == 0 do nothing
-    // if duration <= (curr_time - start_time) send sigkill
+    // iterate the job list and find timeout commands
     TIME_UNTIL_NEXT_ALARM = numeric_limits<double>::max();
     map<JobID,JobEntry>& jobs = GLOBAL_JOBS_POINTER->jobs;
     for (auto& job : jobs) {
