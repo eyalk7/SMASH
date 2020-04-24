@@ -48,7 +48,7 @@ void ctrlCHandler(int sig_num) {
 }
 
 void alarmHandler(int sig_num) {
-    auto curr_time = time(nullptr);
+    time_t curr_time = time(nullptr);
     if (curr_time == (time_t)(-1)) {
         perror("smash error: time failed");
         return;
@@ -57,37 +57,39 @@ void alarmHandler(int sig_num) {
     // search all jobs, for timeout commands
     // if pid  == 0 do nothing
     // if duration <= (curr_time - start_time) send sigkill
-    TIME_UNTIL_NEXT_ALARM = numeric_limits<unsigned int>::max();
-    auto jobs = GLOBAL_JOBS_POINTER->jobs;
-    for (auto job : jobs) {
+    TIME_UNTIL_NEXT_ALARM = numeric_limits<double>::max();
+    map<JobID,JobEntry>& jobs = GLOBAL_JOBS_POINTER->jobs;
+    for (auto& job : jobs) {
         if (!job.second.is_timeout || job.second.pid == 0) continue;
 
-        unsigned int diff_time = difftime(curr_time, job.second.original_start_time);
-        unsigned int time_remain = job.second.time_limit - diff_time;
-        if (time_remain <= 0) {
-            wakeUpCall(job.second.pid, job.second.cmd_str);
-        } else if (time_remain < TIME_UNTIL_NEXT_ALARM) {
+        double time_remain = (double)job.second.time_limit - difftime(curr_time, job.second.original_start_time);
+        if (time_remain < 1.0) {
+
+            cout << "smash: got an alarm" << endl;
+
+            // get group pid
+            pid_t gpid = getpgid(job.second.pid);
+            if (gpid < 0) {
+                perror("smash error: getgpid failed");
+                continue;
+            }
+
+            // send signal, print message
+            if (killpg(gpid, SIGKILL) < 0) {
+                perror("smash error: killpg failed");
+            } else {
+                cout << "smash: " << job.second.cmd_str << " timed out!" << endl;
+                job.second.is_timeout = false; // make sure that we don't "wake up" a job twice
+            }
+
+        } else if ((unsigned int)time_remain < TIME_UNTIL_NEXT_ALARM) {
             TIME_UNTIL_NEXT_ALARM = time_remain;
         }
     }
 
     // send another alarm for the next timeout commands
-    if (TIME_UNTIL_NEXT_ALARM < numeric_limits<unsigned int>::max()) alarm(TIME_UNTIL_NEXT_ALARM);
-}
-void wakeUpCall(int pid, const string& str) {
-    cout << "smash: got an alarm" << endl;
-
-    // send SIGSTOP to CURR_FORK_CHILD_RUNNING
-    pid_t gpid = getpgid(pid);
-    if (gpid < 0) {
-        perror("smash error: getgpid failed");
-        return;
-    }
-
-    // send signal, print message
-    if (killpg(gpid, SIGKILL) < 0) {
-        perror("smash error: killpg failed");
-    } else {
-        cout << "smash: " << str << " timed out!" << endl;
+    if (TIME_UNTIL_NEXT_ALARM < numeric_limits<double>::max()) {
+        alarm((unsigned int)TIME_UNTIL_NEXT_ALARM);
+        TIME_AT_LAST_UPDATE = curr_time;
     }
 }

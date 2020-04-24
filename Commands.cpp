@@ -5,7 +5,8 @@ using namespace std;
 // definition of CURR_FORK_CHILD_RUNNING`
 pid_t CURR_FORK_CHILD_RUNNING = 0;
 JobsList* GLOBAL_JOBS_POINTER = nullptr;
-unsigned int TIME_UNTIL_NEXT_ALARM = numeric_limits<unsigned int>::max();
+double TIME_UNTIL_NEXT_ALARM = numeric_limits<double>::max();
+time_t TIME_AT_LAST_UPDATE = 0;
 
 //----------------------GIVEN PARSING FUNCTIONS------------------------------------
 
@@ -563,10 +564,18 @@ void TimeoutCommand::execute() {
         // add the timeout command to the jobs list as a timeout job
         JobEntry* job_entry = shell->addJob(pid, original_cmd, false, true, duration);
 
-       if (duration < TIME_UNTIL_NEXT_ALARM) {
+       // update alarm
+       time_t curr_time = time(nullptr);
+       if (curr_time == (time_t)(-1)) {
+           perror("smash error: time failed");
+       } else if (TIME_UNTIL_NEXT_ALARM < numeric_limits<double>::max()) {
+           TIME_UNTIL_NEXT_ALARM -= difftime(curr_time, TIME_AT_LAST_UPDATE);
+       }
+       if (duration < (int)TIME_UNTIL_NEXT_ALARM) {
            alarm(duration);
            TIME_UNTIL_NEXT_ALARM = duration;
        }
+       TIME_AT_LAST_UPDATE = curr_time;
 
         if (!to_background) {
             CURR_FORK_CHILD_RUNNING = pid;
