@@ -5,6 +5,7 @@ using namespace std;
 // definition of CURR_FORK_CHILD_RUNNING`
 pid_t CURR_FORK_CHILD_RUNNING = 0;
 JobsList* GLOBAL_JOBS_POINTER = nullptr;
+unsigned int TIME_UNTIL_NEXT_ALARM = numeric_limits<unsigned int>::max();
 
 //----------------------GIVEN PARSING FUNCTIONS------------------------------------
 
@@ -94,6 +95,22 @@ void printError(const string& msg) {
     std::cerr << "smash error: " << msg << endl;
 }
 
+bool isBuiltInCommand(const string& cmd_part) {
+    if (cmd_part.compare("chprompt") == 0 || cmd_part.compare("chprompt&") == 0 || cmd_part.find("chprompt ") == 0) return true;
+    if (cmd_part.compare("showpid") == 0 || cmd_part.compare("showpid&") == 0 || cmd_part.find("showpid ") == 0) return true;
+    if (cmd_part.compare("pwd") == 0 || cmd_part.compare("pwd&") == 0 || cmd_part.find("pwd ") == 0) return true;
+    if (cmd_part.compare("cd") == 0 || cmd_part.compare("cd&") == 0 || cmd_part.find("cd ") == 0) return true;
+    if (cmd_part.compare("jobs") == 0 || cmd_part.compare("jobs&") == 0 || cmd_part.find("jobs ") == 0) return true;
+    if (cmd_part.compare("kill") == 0 || cmd_part.compare("kill&") == 0 || cmd_part.find("kill ") == 0) return true;
+    if (cmd_part.compare("fg") == 0 || cmd_part.compare("fg&") == 0 || cmd_part.find("fg ") == 0) return true;
+    if (cmd_part.compare("bg") == 0 || cmd_part.compare("bg&") == 0 || cmd_part.find("bg ") == 0) return true;
+    if (cmd_part.compare("quit") == 0 || cmd_part.compare("quit&") == 0 || cmd_part.find("quit ") == 0) return true;
+
+// TODO: maybe timeout isn't built in commmand for that matter
+    if (cmd_part.compare("timeout") == 0 || cmd_part.compare("timeout&") == 0 || cmd_part.find("timeout ") == 0) return true;
+
+    return false;
+}
 //---------------------------JOBS LISTS------------------------------
 JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped, bool is_timeout, unsigned int time_limit) : pid(pid),
                                                                                                                 cmd_str(cmd_str),
@@ -373,8 +390,7 @@ bool PipeCommand::Pipe(int my_pipe[], pid_t* pid1, pid_t* pid2) {
 RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) :   Command(cmd_line),
                                                                                     shell(shell),
                                                                                     to_append(false),
-                                                                                    to_background(false),
-                                                                                    cmd_is_fg(false) {
+                                                                                    to_background(false) {
     // find split place
     int split_place = original_cmd.find_first_of(">");
 
@@ -395,8 +411,8 @@ RedirectionCommand::RedirectionCommand(const char* cmd_line, SmallShell* shell) 
     int end_of_pathname = pathname.find_first_of(" ");
     pathname = pathname.substr(0,end_of_pathname);
 
-    // check if cmd is fg
-    if (cmd_part.find("fg ") == 0 || cmd_part.compare("fg") == 0) cmd_is_fg = true;
+    // check if cmd is built-in command
+    cmd_is_built_in = isBuiltInCommand(cmd_part);
 }
 void RedirectionCommand::execute() {
 
@@ -414,7 +430,7 @@ void RedirectionCommand::execute() {
         return;
     }
 
-    if (cmd_is_fg) {
+    if (cmd_is_built_in) {
         // save old stdout
         auto stdout_fd = dup(STDOUT);
         if (stdout_fd < 0) { // dup error - can't continue
@@ -520,10 +536,19 @@ TimeoutCommand::TimeoutCommand(const char* cmd_line, SmallShell* shell) :   Comm
 
     // remove ampersand and check to background
     to_background = checkAndRemoveAmpersand(cmd_part);
+
+    // check if it's built-in command
+    cmd_is_built_in = isBuiltInCommand(cmd_part);
 }
 void TimeoutCommand::execute() {
     if (cmd_part.empty()) return;  // no command to execute
     if (duration < 1) return;      // invalid duration given
+
+    if (cmd_is_built_in) {
+        // TODO: what should we do here? (only real use can be with fg or bg)
+        shell->executeCommand(cmd_part.c_str());
+        return;
+    }
 
     pid_t pid = fork();
 
@@ -537,7 +562,11 @@ void TimeoutCommand::execute() {
 
         // add the timeout command to the jobs list as a timeout job
         JobEntry* job_entry = shell->addJob(pid, original_cmd, false, true, duration);
-        alarm(duration);
+
+       if (duration < TIME_UNTIL_NEXT_ALARM) {
+           alarm(duration);
+           TIME_UNTIL_NEXT_ALARM = duration;
+       }
 
         if (!to_background) {
             CURR_FORK_CHILD_RUNNING = pid;

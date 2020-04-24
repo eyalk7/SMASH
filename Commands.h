@@ -42,6 +42,7 @@ class SmallShell;
 extern pid_t CURR_FORK_CHILD_RUNNING;   // PID of the process currently in the foreground
 extern pid_t SMASH_PROCESS_PID;         // PID of the SMASH process
 extern JobsList* GLOBAL_JOBS_POINTER;   // pointer to the Jobs list in SmallSHell
+extern unsigned int TIME_UNTIL_NEXT_ALARM;
 extern bool QUIT_SHELL;                 // While this is false the smash will keep running
 
 
@@ -119,7 +120,7 @@ class RedirectionCommand : public Command {
     SmallShell* shell;
     bool to_append;     // true if ">>"
     bool to_background;
-    bool cmd_is_fg;     // fg command is a special
+    bool cmd_is_built_in;     // built-in commands should not fork
     string cmd_part;
     string pathname;
 
@@ -132,8 +133,9 @@ public:
 class TimeoutCommand : public Command {
     SmallShell* shell;
     bool to_background;
-    int duration;
+    unsigned int duration;
     string cmd_part;
+    bool cmd_is_built_in; // built in command should not fork
 
 public:
     TimeoutCommand(const char* cmd_line, SmallShell* shell);
