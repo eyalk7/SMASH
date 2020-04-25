@@ -816,7 +816,7 @@ bool KillCommand::parseAndCheck(const char* cmd_line, int* sig, JobID* j_id) {
     if (!isdigit(first_arg[1])) return false;
     if ((int)first_arg.size() == 3 && !isdigit(first_arg[2])) return false;
     *sig = stoi(first_arg.substr(1));
-    if (*sig < 1 || *sig > 31) return false;
+    if (*sig < 0 || *sig > 31) return false;
 
     // check second argument
     if ((int)second_arg.size() > 10) return false;
