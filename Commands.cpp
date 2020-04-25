@@ -569,10 +569,17 @@ void TimeoutCommand::execute() {
        if (curr_time == (time_t)(-1)) {
            perror("smash error: time failed");
        } else if (TIME_UNTIL_NEXT_ALARM < numeric_limits<double>::max()) {
+           // if there is an upcoming alarm
+           // update the leftover duration
            TIME_UNTIL_NEXT_ALARM -= difftime(curr_time, TIME_AT_LAST_UPDATE);
        }
+
+       // if the time limit (of the current command) is less than the time until next alarm
        if (duration < (int)TIME_UNTIL_NEXT_ALARM) {
+           // set new alarm (corresponding to this command)
            alarm(duration);
+
+           // update time until next alarm
            TIME_UNTIL_NEXT_ALARM = duration;
        }
        TIME_AT_LAST_UPDATE = curr_time;

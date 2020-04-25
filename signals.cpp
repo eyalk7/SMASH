@@ -81,15 +81,16 @@ void alarmHandler(int sig_num) {
                 perror("smash error: killpg failed");
             } else {
                 cout << "smash: " << job.second.cmd_str << " timed out!" << endl;
-                job.second.is_timeout = false; // make sure that we don't "wake up" a job twice
+                job.second.is_timeout = false; // make sure that we don't SIGKILL a job twice
             }
 
         } else if ((unsigned int)time_remain < TIME_UNTIL_NEXT_ALARM) {
+            // TIME_UNTIL_NEXT_ALARM = minimum timeout leftover duration
             TIME_UNTIL_NEXT_ALARM = time_remain;
         }
     }
 
-    // send another alarm for the next timeout commands
+    // send another alarm for the next timeout command
     if (TIME_UNTIL_NEXT_ALARM < numeric_limits<double>::max()) {
         alarm((unsigned int)TIME_UNTIL_NEXT_ALARM);
         TIME_AT_LAST_UPDATE = curr_time;

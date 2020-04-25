@@ -42,9 +42,11 @@ class SmallShell;
 extern pid_t CURR_FORK_CHILD_RUNNING;   // PID of the process currently in the foreground
 extern pid_t SMASH_PROCESS_PID;         // PID of the SMASH process
 extern JobsList* GLOBAL_JOBS_POINTER;   // pointer to the Jobs list in SmallSHell
-extern double TIME_UNTIL_NEXT_ALARM;
-extern time_t TIME_AT_LAST_UPDATE;
 extern bool QUIT_SHELL;                 // While this is false the smash will keep running
+
+// global variables for managing multiple alarms:
+extern double TIME_UNTIL_NEXT_ALARM;    // leftover duration until next alarm signal is sent
+extern time_t TIME_AT_LAST_UPDATE;      // used for updating TIME_UNTIL_NEXT_ALARM
 
 
 //---------------------------JOBS LISTS------------------------------
