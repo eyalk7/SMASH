@@ -187,7 +187,7 @@ void JobsList::killAllJobs() {
 }
 
 void JobsList::removeFinishedJobs() {
-    if (isSmashChild()) return; // i'm child
+    if (!isSmash()) return; // not the SMASH
 
     vector<JobID> to_remove(100,0);
     int to_remove_iter= 0;
@@ -1189,7 +1189,9 @@ SmallShell::~SmallShell() {
 */
 Command* SmallShell::CreateCommand(const char* cmd_line) {
     string cmd_s = _trim(string(cmd_line));
-    if (cmd_s.find("|") != string::npos) {
+    if (cmd_s.compare("timeout") == 0 || cmd_s.compare("timeout&") == 0 || cmd_s.find("timeout ") == 0) {
+        return new TimeoutCommand(cmd_line, this);
+    } else if (cmd_s.find("|") != string::npos) {
         return new PipeCommand(cmd_line, this);
     } else if (cmd_s.find(">") != string::npos) {
         return new RedirectionCommand(cmd_line, this);
@@ -1213,8 +1215,6 @@ Command* SmallShell::CreateCommand(const char* cmd_line) {
         return new QuitCommand(cmd_line, this->jobs);
     } else if (cmd_s.compare("cp") == 0 || cmd_s.compare("cp&") == 0 || cmd_s.find("cp ") == 0) {
         return new CopyCommand(cmd_line, this->jobs);
-    } else if (cmd_s.compare("timeout") == 0 || cmd_s.compare("timeout&") == 0 || cmd_s.find("timeout ") == 0) {
-        return new TimeoutCommand(cmd_line, this);
     } else {
         return new ExternalCommand(cmd_line, this->jobs);
     }
