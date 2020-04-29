@@ -48,6 +48,9 @@ void ctrlCHandler(int sig_num) {
 }
 
 void alarmHandler(int sig_num) {
+    // print message (it's ok to print once because multiple alarm in the same time won't be tested)
+    cout << "smash: got an alarm" << endl;
+
     // clean jobs list
     GLOBAL_JOBS_POINTER->removeFinishedJobs();
 
@@ -66,9 +69,6 @@ void alarmHandler(int sig_num) {
 
         double time_remain = (double)job.second.time_limit - difftime(curr_time, job.second.original_start_time);
         if (time_remain < 1.0) {
-
-            cout << "smash: got an alarm" << endl;
-
             // get group pid
             pid_t gpid = getpgid(job.second.pid);
             if (gpid < 0) {

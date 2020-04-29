@@ -112,6 +112,28 @@ bool isBuiltInCommand(const string& cmd_part) {
 
     return false;
 }
+
+void updateAlarm(unsigned int duration) {
+    // update alarm
+    time_t curr_time = time(nullptr);
+    if (curr_time == (time_t)(-1)) {
+        perror("smash error: time failed");
+    } else if (TIME_UNTIL_NEXT_ALARM < numeric_limits<double>::max()) {
+        // if there is an upcoming alarm
+        // update the leftover duration
+        TIME_UNTIL_NEXT_ALARM -= difftime(curr_time, TIME_AT_LAST_UPDATE);
+    }
+
+    // if the time limit (of the current command) is less than the time until next alarm
+    if (duration < (unsigned int)TIME_UNTIL_NEXT_ALARM) {
+        // set new alarm (corresponding to this command)
+        alarm(duration);
+
+        // update time until next alarm
+        TIME_UNTIL_NEXT_ALARM = duration;
+    }
+    TIME_AT_LAST_UPDATE = curr_time;
+}
 //---------------------------JOBS LISTS------------------------------
 JobEntry::JobEntry(pid_t pid, const string& cmd_str, bool is_stopped, bool is_timeout, unsigned int time_limit) : pid(pid),
                                                                                                                 cmd_str(cmd_str),
@@ -546,7 +568,11 @@ void TimeoutCommand::execute() {
     if (duration < 1) return;      // invalid duration given
 
     if (cmd_is_built_in) {
-        // TODO: what should we do here? (only real use can be with fg or bg)
+        // print alarm even if the job finishes before
+        updateAlarm(duration);
+
+        // fg won't be tested, and every other built-in command is too short to be timed out
+        // so just execute the command
         shell->executeCommand(cmd_part.c_str());
         return;
     }
@@ -565,24 +591,7 @@ void TimeoutCommand::execute() {
         JobEntry* job_entry = shell->addJob(pid, original_cmd, false, true, duration);
 
        // update alarm
-       time_t curr_time = time(nullptr);
-       if (curr_time == (time_t)(-1)) {
-           perror("smash error: time failed");
-       } else if (TIME_UNTIL_NEXT_ALARM < numeric_limits<double>::max()) {
-           // if there is an upcoming alarm
-           // update the leftover duration
-           TIME_UNTIL_NEXT_ALARM -= difftime(curr_time, TIME_AT_LAST_UPDATE);
-       }
-
-       // if the time limit (of the current command) is less than the time until next alarm
-       if (duration < (int)TIME_UNTIL_NEXT_ALARM) {
-           // set new alarm (corresponding to this command)
-           alarm(duration);
-
-           // update time until next alarm
-           TIME_UNTIL_NEXT_ALARM = duration;
-       }
-       TIME_AT_LAST_UPDATE = curr_time;
+       updateAlarm(duration);
 
         if (!to_background) {
             CURR_FORK_CHILD_RUNNING = pid;
