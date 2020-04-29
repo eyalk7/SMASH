@@ -125,7 +125,7 @@ void updateAlarm(unsigned int duration) {
     }
 
     // if the time limit (of the current command) is less than the time until next alarm
-    if (duration < (unsigned int)TIME_UNTIL_NEXT_ALARM) {
+    if ((double)duration < TIME_UNTIL_NEXT_ALARM) {
         // set new alarm (corresponding to this command)
         alarm(duration);
 
