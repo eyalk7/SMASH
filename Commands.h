@@ -29,7 +29,7 @@ using std::map;
 // macros
 #define COMMAND_MAX_ARGS (20)
 #define COMMAND_MAX_CHARS (80)
-#define COPY_DATA_BUFFER_SIZE (1024);
+#define COPY_DATA_BUFFER_SIZE (1024)
 
 #define STDIN 0
 #define STDOUT 1
@@ -282,6 +282,13 @@ public:
     explicit CopyCommand(const char* cmd_line, JobsList* jobs);
     virtual ~CopyCommand() = default;
     void execute() override;
+
+    /// Checks if old_path and new_path reference the same file
+    /// \return True if it's the same file, otherwise False
+    bool comparePaths();
+
+    bool openFiles(int* fd_read, int* fd_write);
+    bool copyData(int fd_read, int fd_write, int SIZE);
 };
 
 //---------------------------SMALL SHELL--------------------------------

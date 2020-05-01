@@ -733,7 +733,7 @@ void ChangeDirCommand::execute() {
         return;
     }
 
-    int retVAl = 0;
+    int retVAl = -2;
     if (new_path == "-") // change to last directory
     {
         if (old_pwd->empty()) {
@@ -752,7 +752,7 @@ void ChangeDirCommand::execute() {
     } else if (retVAl == -1) {
         // directory change error
         perror("smash error: chdir failed");
-    }
+    } // else do nothing
 }
 
 JobsCommand::JobsCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line),
@@ -1085,29 +1085,16 @@ CopyCommand::CopyCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(
 void CopyCommand::execute() {
     // too few arguments or empty string given as an argument
     if (old_path.empty() || new_path.empty()) return;
-    if (old_path == new_path) {
+
+    // check if the same path is being referenced
+    if (comparePaths()) {
         cout << "smash: " << old_path << " was copied to " << new_path << endl;
         return;
     }
 
-    // open read file (where the user wants to copy from)
-    int read_flags = O_RDONLY;
-    int fd_read = open(old_path.c_str(), read_flags);
-    if (fd_read == -1) {
-        perror("smash error: open failed");
-        return;
-    }
-
-    // open write file (where the user wants to copy to)
-    int write_flags = O_WRONLY | O_CREAT | O_TRUNC;
-    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
-
-    int fd_write = open(new_path.c_str(), write_flags, mode);
-    if (fd_write == -1)  {
-        perror("smash error: open failed");
-        if (close(fd_read) == -1) perror("smash error: close failed");
-        return;
-    }
+    // open the files using helper function
+    int fd_read, fd_write;
+    if (!openFiles(&fd_read, &fd_write)) return;
 
     pid_t pid = fork();
     if (pid == 0) { // copy data in child process
@@ -1118,34 +1105,9 @@ void CopyCommand::execute() {
             perror("smash error: failed to set SIGTSTP handler");
         }
 
-        int SIZE = COPY_DATA_BUFFER_SIZE;
-
-        bool copy_success = true;
-        char buff[SIZE];
-        ssize_t read_retVal = read(fd_read, buff, SIZE);
-        ssize_t write_retVal;
-        while (read_retVal > 0) {   // while there is something to write
-            write_retVal = write(fd_write, buff, read_retVal);
-            if (write_retVal == -1) {
-                perror("smash error: write failed");
-                copy_success = false;
-            }
-
-            // check that the read size equals the write size
-            if (write_retVal != read_retVal) {
-                perror("smash error: incomplete write");
-                copy_success = false;
-            }
-
-            read_retVal = read(fd_read, buff, SIZE);
-        }
-
-        if (read_retVal == -1) {
-            perror("smash error: read failed");
-            copy_success = false;
-        }
-
-        if (copy_success) {
+        // Copy the data using helper function
+        if (copyData(fd_read, fd_write, COPY_DATA_BUFFER_SIZE)) {
+            // on success, print the required message
             cout << "smash: " << old_path << " was copied to " << new_path << endl;
         }
 
@@ -1180,6 +1142,81 @@ void CopyCommand::execute() {
 
         CURR_FORK_CHILD_RUNNING = 0;
     }
+}
+
+bool CopyCommand::comparePaths() {
+    char* resolved_old_path = realpath(old_path.c_str(), nullptr);
+    if (resolved_old_path == nullptr) {
+        // first file doesn't exist -> need to get 'open failed' error
+        free(resolved_old_path);
+        return false;
+    }
+
+    char* resolved_new_path = realpath(new_path.c_str(), nullptr);
+    if (resolved_new_path == nullptr) {
+        // second file doesn't exist -> need to get 'open failed' error
+        free(resolved_old_path);
+        free(resolved_new_path);
+        return false;
+    }
+
+    string path1(resolved_old_path); free(resolved_old_path);
+    string path2(resolved_new_path); free(resolved_new_path);
+    if (old_path == new_path || path1.compare(path2) == 0) return true;
+
+    return false;
+}
+
+bool CopyCommand::openFiles(int *fd_read, int *fd_write) {
+    // open read file (where the user wants to copy from)
+    int read_flags = O_RDONLY;
+    *fd_read = open(old_path.c_str(), read_flags);
+    if (*fd_read == -1) {
+        perror("smash error: open failed");
+        return false;
+    }
+
+    // open write file (where the user wants to copy to)
+    int write_flags = O_WRONLY | O_CREAT | O_TRUNC;
+    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
+
+    *fd_write = open(new_path.c_str(), write_flags, mode);
+    if (*fd_write == -1)  {
+        perror("smash error: open failed");
+        if (close(*fd_read) == -1) perror("smash error: close failed");
+        return false;
+    }
+
+    return true; // no errors
+}
+
+bool CopyCommand::copyData(int fd_read, int fd_write, int SIZE) {
+    bool retVAl = true;
+    char buff[SIZE];
+    ssize_t read_retVal = read(fd_read, buff, SIZE);
+    ssize_t write_retVal;
+    while (read_retVal > 0) {   // while there is something to write
+        write_retVal = write(fd_write, buff, read_retVal);
+        if (write_retVal == -1) {
+            perror("smash error: write failed");
+            retVAl = false;
+        }
+
+        // check that the read size equals the write size
+        if (write_retVal != read_retVal) {
+            perror("smash error: incomplete write");
+            retVAl = false;
+        }
+
+        read_retVal = read(fd_read, buff, SIZE);
+    }
+
+    if (read_retVal == -1) {
+        perror("smash error: read failed");
+        retVAl = false;
+    }
+
+    return retVAl;
 }
 
 //---------------------------SMALL SHELL--------------------------------------
